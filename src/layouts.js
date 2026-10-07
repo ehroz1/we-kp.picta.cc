@@ -17,7 +17,13 @@
  * У пунктов может быть иконка (item.icon: «ph:имя» из SLIDE_ICONS или «up:id»
  * из своей библиотеки). У раскладок со «слотом графики» (SLOTS) графику можно
  * сменить: data.gfx — '' (как задумано), 'none', мотив из GFX или «up:id».
- * Свои картинки (иконки, графика) app.js кладёт в USER_ASSETS.
+ * Свои картинки (иконки, графика, фото) app.js кладёт в USER_ASSETS.
+ *
+ * Своё фото есть у любой раскладки: data.photo — «up:id» из библиотеки фото,
+ * data.photoAt — колонка справа / слева / на половину слайда (у «Кейса» —
+ * низ синей панели), data.photoFocus — какую часть кадра оставить. Слайд с
+ * фото рисует renderSlide(): фото на всю высоту, рядом — та же раскладка,
+ * только уже; «Уместить» подгоняет текст под новую ширину.
  *
  * Текст заказчика не меняется: typo() трогает только пробелы (неразрывные
  * после коротких слов, внутри чисел и перед тире), *звёздочки* дают синий акцент.
@@ -81,7 +87,7 @@ function paras(value, cls, hint, env, f) {
 /* --------------------------------------------------------- пункты */
 
 /* Свои загруженные картинки: app.js заполняет из localStorage. */
-const USER_ASSETS = { icons: new Map(), graphics: new Map() };
+const USER_ASSETS = { icons: new Map(), graphics: new Map(), photos: new Map() };
 
 /* Иконка пункта: Phosphor Duotone в цвете текста (синий / белый на синем) или своя картинка. */
 function slideIcon(ref) {
@@ -408,6 +414,7 @@ function userGraphic(ref, b) {
 
 /* Графика слайда: «как задумано» — родная графика раскладки, иначе выбранная из библиотеки. */
 function gfx(kind, d, def) {
+  if (photoOf(kind, d)) return '';   // рядом с фото графика лишняя
   const slot = SLOTS[kind];
   const g = d.gfx || '';
   if (!slot || !g) return def;
@@ -418,6 +425,48 @@ function gfx(kind, d, def) {
     return `<div class="g gclip" style="left:${slot.x}px;top:${slot.y}px;width:${slot.w}px;height:${slot.h}px">${motif(g, Object.assign({}, slot, { x: 0, y: 0 }))}</div>`;
   }
   return motif(g, slot);
+}
+
+/* --------------------------------------------------------- свои фото */
+
+/* Где стоит фото. Колонка 640 px — треть слайда, «половина» — 960 px. */
+const PHOTO_AT = [['right', 'Справа'], ['left', 'Слева'], ['half', 'Половина']];
+const PHOTO_W = { right: 640, left: 640, half: 960 };
+/* Раскладки, где не всё подходит: у «Что делаем» слева синяя панель, у «Кейса» справа. */
+const PHOTO_MODES = {
+  whatwedo: ['right'], case: ['panel'],
+  // таблицы, цепочки и ряды карточек на половине слайда превращаются в столбики по слову
+  list: ['right', 'left'], stages: ['right', 'left'], compare: ['right', 'left'],
+  timeline: ['right', 'left'], summary: ['right', 'left'],
+};
+/* Какую часть кадра держать в колонке. */
+const PHOTO_FOCUS = [['left', 'Левее'], ['', 'Центр'], ['right', 'Правее']];
+
+function photoModes(kind) { return PHOTO_MODES[kind] || ['right', 'left', 'half']; }
+
+/* Фото слайда → { url, at, pos } или null (нет фото или его нет в этом браузере). */
+function photoOf(kind, d) {
+  if (!d || !has(d.photo)) return null;
+  const a = USER_ASSETS.photos.get(d.photo);
+  if (!a) return null;
+  const modes = photoModes(kind);
+  const at = modes.includes(d.photoAt) ? d.photoAt : modes[0];
+  const x = { left: '0%', right: '100%' }[d.photoFocus] || '50%';
+  return { url: a.url, at, pos: `${x} 50%` };
+}
+function photoBox(p, cls) {
+  return `<div class="${cls}" data-f="photo"><img src="${esc(p.url)}" alt="" style="object-position:${p.pos}"></div>`;
+}
+
+/*
+ * HTML слайда с учётом фото. Раскладка рисуется как обычно, но в колонке уже
+ * 1920 px, фото — рядом на всю высоту. Все места, где нужен слайд, зовут это.
+ */
+function renderSlide(kind, d, env) {
+  const html = KINDS[kind].render(d, env);
+  const p = photoOf(kind, d);
+  if (!p || p.at === 'panel') return html;
+  return `<div class="sl slp at-${p.at}" data-kind="${kind}" style="--pw:${PHOTO_W[p.at]}px">${photoBox(p, 'ph-col')}${html}</div>`;
 }
 
 const ARROW = '<svg class="arr" viewBox="0 0 48 24" aria-hidden="true"><path d="M0 12H45M34 1.5 44.5 12 34 22.5" fill="none" stroke="currentColor" stroke-width="3.5"/></svg>';
@@ -481,7 +530,7 @@ const KINDS = {
         + paras(d.lead, 't-lead mt-lead', '', env, 'lead')
         + colsBlock(itemsFor(d, env, 3, PH_ITEMS), env, 'cols push')
         + blk('p', 't-note mt-note', d.note, '', env, 'note'),
-        { graphics: d.gfx ? panelBg() + gfx('problem', d, '') : gridPanel() });
+        { graphics: photoOf('problem', d) ? '' : d.gfx ? panelBg() + gfx('problem', d, '') : gridPanel() });
     },
   },
 
@@ -510,12 +559,13 @@ const KINDS = {
     about: 'Слева синяя панель с заголовком и тремя квадратами, справа нумерованный список.',
     fields: [['title', 'Заголовок на синей панели'], ['lead', 'Текст на панели'], ['items', 'Пункты (3–7)'], ['note', 'Сноска']],
     render(d, env) {
+      const own = d.gfx && !photoOf('whatwedo', d);
       return `<div class="sl sl-wwd" data-kind="whatwedo" style="--k:${env.k}">`
         + `<div class="panel vivid">${GRAIN}</div>`
-        + (d.gfx ? gfx('whatwedo', d, '') : '')
+        + (own ? gfx('whatwedo', d, '') : '')
         + head(env)
         + `<div class="sl-body" data-fit>`
-        + `<div class="lc on-blue" data-fit>${blk('h2', 't-h2', d.title, 'Что мы делаем', env, 'title')}${paras(d.lead, 't-desc', '', env, 'lead')}${d.gfx ? '<div class="sq-row sq-space"></div>' : '<div class="sq-row"><i></i><i></i><i></i></div>'}</div>`
+        + `<div class="lc on-blue" data-fit>${blk('h2', 't-h2', d.title, 'Что мы делаем', env, 'title')}${paras(d.lead, 't-desc', '', env, 'lead')}${own ? '<div class="sq-row sq-space"></div>' : '<div class="sq-row"><i></i><i></i><i></i></div>'}</div>`
         + `<div class="rc" data-fit>${numList(itemsFor(d, env, 4, PH_ITEMS), env)}${blk('p', 't-note', d.note, '', env, 'note')}</div>`
         + `</div>${foot()}</div>`;
     },
@@ -529,8 +579,10 @@ const KINDS = {
     render(d, env) {
       const entries = itemsFor(d, env, 4, i => ['Первый этап', 'Второй этап', 'Третий этап', 'Четвёртый этап'][i]);
       const n = entries.length;
-      const two = n > 4;
-      const c = n <= 4 ? Math.max(n, 1) : n <= 6 ? 3 : 4;
+      // рядом с фото места на 4 карточки в ряд нет — максимум по 2
+      const narrow = Boolean(photoOf('stages', d));
+      const two = narrow ? n > 2 : n > 4;
+      const c = narrow ? Math.min(Math.max(n, 1), 2) : n <= 4 ? Math.max(n, 1) : n <= 6 ? 3 : 4;
       const cards = n
         ? `<div class="cards${two ? ' two-rows' : ''}" style="--c:${c}" data-f="items">${entries.map((e, j) =>
           `<div class="card${j === 0 ? ' vivid' : ''}">${j === 0 ? GRAIN : ''}<span class="bignum">${j + 1}</span><div class="cin" data-fit>${ico(e.it, 'ico-card')}${itemInner(e, env)}</div></div>`
@@ -813,8 +865,8 @@ const KINDS = {
         : env.preview ? `<span class="cs-big" data-f="big" style="font-size:calc(168px * var(--k))">${ph(env, '+40%')}</span>` : '';
       return `<div class="sl sl-case" data-kind="case" style="--k:${env.k}">`
         + `<div class="cs-panel vivid">${GRAIN}</div>`
-        + `<div class="cs-pin on-blue" data-fit>${big}${blk('p', 'cs-label', d.label, 'подпись к цифре', env, 'label')}</div>`
-        + gfx('case', Object.assign({}, d, { gfx: d.gfx || 'squares' }), '')
+        + `<div class="cs-pin on-blue${photoOf('case', d) ? ' has-photo' : ''}" data-fit>${big}${blk('p', 'cs-label', d.label, 'подпись к цифре', env, 'label')}</div>`
+        + (photoOf('case', d) ? photoBox(photoOf('case', d), 'cs-photo') : gfx('case', Object.assign({}, d, { gfx: d.gfx || 'squares' }), ''))
         + head(env)
         + `<div class="sl-body" data-fit>`
         + blk('h2', 't-h2', d.title, 'Кейс: название проекта', env, 'title')
@@ -875,6 +927,7 @@ function emptyData() {
     note: '', title: '', lead: '', items: [],
     label: '', price: '', level: 1, big: '',
     gfx: '',
+    photo: '', photoAt: '', photoFocus: '',
     rows: [],
     table: { corner: '', priceLabel: '', cols: [], rows: [] },
   };

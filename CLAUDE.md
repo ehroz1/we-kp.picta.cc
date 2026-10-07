@@ -96,6 +96,17 @@ Runtime is three classic scripts sharing globals (no modules):
   **Item icons:** `item.icon` is `ph:<name>` (SLIDE_ICONS) or `up:<id>`;
   `slideIcon()`/`ico()` render it in the text colour (blue, white on blue).
   User images come from the global `USER_ASSETS` (filled by app.js).
+  **Photos:** every kind can carry a user photo (`data.photo` = `up:<id>`
+  from `USER_ASSETS.photos`, `photoAt`, `photoFocus`). `renderSlide(kind,
+  data, env)` — use it instead of `KINDS[kind].render` everywhere — wraps the
+  layout: outer `.sl.slp.at-right|left|half` 1920×1080 with a full-height
+  `.ph-col` (`PHOTO_W`: 640 / 960 px) and the unchanged layout as an inner
+  `.sl` narrowed to `1920 − --pw`, so the fit loop just reflows the text.
+  `PHOTO_MODES` limits modes per kind (half is off where tables/chains/card
+  rows would break words; whatwedo is right-only; case uses `'panel'` — the
+  photo sits in the bottom of its blue panel, drawn by the case layout
+  itself). With a photo `gfx()` returns nothing; layout CSS that assumed the
+  full width is overridden under `.slp` at the end of `slides.css`.
   **Partners:** `env.partners` (resolved by app.js) → `partnersHtml()` on the
   cover and contacts top row, max 3.
   `SAMPLE`, `sampleData()` and `STRUCTURES` feed the picker and "+ Слайд".
@@ -136,7 +147,11 @@ Runtime is three classic scripts sharing globals (no modules):
   `wekp.logos.v1`, `wekp.graphics.v1`, `wekp.icons.v1` as `[{ id: 'up:…',
   name, url }]` (rasters downscaled, WebP when the browser can encode it);
   `syncAssets()` loads them into `USER_ASSETS` and the logo index; drafts
-  keep only ids. `migrateDeck()` turns the old single `deck.client` logo into
+  keep only ids. Photos are too big for localStorage: they live in IndexedDB
+  (`wekp` / `photos`, `{ id, name, url, thumb, added }`, downscaled to 2000 px
+  WebP/JPEG + a 320 px thumb), loaded async by `loadPhotos()` at start;
+  `addPhotosToSlide()` handles the «Фото» box upload (multiple), a drop on
+  the stage and ⌘V outside inputs. `migrateDeck()` turns the old single `deck.client` logo into
   a library entry + partner id. `normalizeDraft()` /
   `normalizeSlide()` merge old data over `emptyData()` — new fields just get
   defaults; bump the key only for incompatible changes. `fitSlide()` is the

@@ -184,6 +184,22 @@ __CSS__
         <div class="layouts" id="layouts"></div>
         <p class="hidden-note" id="hiddenNote" hidden></p>
       </section>
+      <section class="layouts-box photo-box" id="photoBox">
+        <div class="box-head">
+          <span class="eyebrow">Фото</span>
+          <span class="muted small" id="photoName"></span>
+        </div>
+        <div class="photo-grid" id="photoGrid"></div>
+        <div class="photo-opts" id="photoOpts" hidden>
+          <div class="seg" id="photoAt" role="group" aria-label="Где фото"></div>
+          <p class="muted small" id="photoAtNote" hidden></p>
+          <div class="photo-focus">
+            <span class="muted small">Кадр</span>
+            <div class="seg" id="photoFocus" role="group" aria-label="Какую часть фото показать"></div>
+          </div>
+        </div>
+        <p class="muted small photo-hint">Фото можно перетащить прямо на слайд или вставить из буфера — ⌘V / Ctrl+V</p>
+      </section>
       <section class="layouts-box gfx-box" id="gfxBox" hidden>
         <div class="box-head">
           <span class="eyebrow">Графика</span>
@@ -264,6 +280,7 @@ __CSS__
 
 <p class="status" id="status" role="status" aria-live="polite"></p>
 <input type="file" id="imageInput" accept="image/png,image/svg+xml,image/webp,image/jpeg" hidden>
+<input type="file" id="photoInput" accept="image/jpeg,image/png,image/webp,image/avif,image/gif" multiple hidden>
 <input type="file" id="textFileInput" accept=".docx,.txt,.md,.markdown,.html,.htm,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
 
 <!-- слайды для печати в PDF (заполняются перед печатью) -->

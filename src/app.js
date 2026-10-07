@@ -209,8 +209,9 @@ function canWebp() {
   }
   return webpOk;
 }
-/* Картинка → data URL: SVG как есть, растр уменьшаем до max px (WebP с прозрачностью, иначе PNG). */
-function fileToDataUrl(file, max) {
+/* Картинка → data URL: SVG как есть, растр уменьшаем до max px (WebP с прозрачностью, иначе PNG;
+   фото — WebP или JPEG, прозрачность им не нужна, а весят они в разы меньше). */
+function fileToDataUrl(file, max, photo = false) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
@@ -223,7 +224,8 @@ function fileToDataUrl(file, max) {
         c.width = Math.max(1, Math.round(img.width * k));
         c.height = Math.max(1, Math.round(img.height * k));
         c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-        resolve(canWebp() ? c.toDataURL('image/webp', 0.9) : c.toDataURL('image/png'));
+        if (photo) resolve(canWebp() ? c.toDataURL('image/webp', 0.86) : c.toDataURL('image/jpeg', 0.88));
+        else resolve(canWebp() ? c.toDataURL('image/webp', 0.9) : c.toDataURL('image/png'));
       };
       img.onerror = reject;
       img.src = url;
@@ -245,6 +247,83 @@ function removeFromLib(key, id) {
   storeSet(key, userLib(key).filter(x => x.id !== id));
   syncAssets();
 }
+/* ---------------------------------------------------------------- фото */
+/*
+ * Фото тяжёлые, поэтому живут не в localStorage, а в IndexedDB этого браузера
+ * (там сотни мегабайт). При старте все грузятся в USER_ASSETS.photos; в
+ * черновике — только id. У каждого фото есть маленькая копия для плиток.
+ */
+const PHOTO_MAX = 2000;   // px по длинной стороне — хватает и для PNG ×2 половины слайда
+const PHOTO_THUMB = 320;
+let photoDbP = null;
+function photoDb() {
+  if (!photoDbP) {
+    photoDbP = new Promise((resolve, reject) => {
+      if (!window.indexedDB) { reject(new Error('IndexedDB недоступна')); return; }
+      const rq = indexedDB.open('wekp', 1);
+      rq.onupgradeneeded = () => rq.result.createObjectStore('photos', { keyPath: 'id' });
+      rq.onsuccess = () => resolve(rq.result);
+      rq.onerror = () => reject(rq.error);
+    });
+  }
+  return photoDbP;
+}
+function photoTx(mode, fn) {
+  return photoDb().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction('photos', mode);
+    const rq = fn(tx.objectStore('photos'));
+    tx.oncomplete = () => resolve(rq && rq.result);
+    tx.onerror = tx.onabort = () => reject(tx.error);
+  }));
+}
+async function loadPhotos() {
+  try {
+    const all = (await photoTx('readonly', st => st.getAll())) || [];
+    all.sort((a, b) => (a.added || 0) - (b.added || 0));
+    USER_ASSETS.photos = new Map(all.filter(a => a && a.id && a.url).map(a => [a.id, a]));
+  } catch { /* без IndexedDB фото живут до перезагрузки страницы */ }
+  fitCache.clear();
+}
+let photoWarned = false;
+async function addPhoto(file) {
+  const [url, thumb] = await Promise.all([fileToDataUrl(file, PHOTO_MAX, true), fileToDataUrl(file, PHOTO_THUMB, true)]);
+  const entry = { id: `up:${uid()}`, name: file.name.replace(/\.[^.]+$/, '').slice(0, 40) || 'Фото', url, thumb, added: Date.now() };
+  USER_ASSETS.photos.set(entry.id, entry);
+  fitCache.clear();
+  try {
+    await photoTx('readwrite', st => st.put(entry));
+    if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+  } catch {
+    if (!photoWarned) say('Браузер не даёт сохранить фото (приватное окно?) — оно пропадёт после перезагрузки. Финальную версию сохраните в PDF', 7000);
+    photoWarned = true;
+  }
+  return entry;
+}
+async function removePhoto(id) {
+  USER_ASSETS.photos.delete(id);
+  fitCache.clear();
+  try { await photoTx('readwrite', st => st.delete(id)); } catch { /* уже нет */ }
+}
+function isImageFile(f) { return f && /^image\/(png|jpe?g|webp|gif|avif|bmp)$/i.test(f.type); }
+
+/* Несколько фото сразу → в библиотеку; первое — на текущий слайд. */
+async function addPhotosToSlide(files) {
+  const list = [...files].filter(isImageFile);
+  if (!list.length) {
+    if (files.length) say('Это не фото: подойдут JPG, PNG, WEBP (HEIC с iPhone — сначала экспортируйте в JPG)', 6000);
+    return;
+  }
+  say(list.length > 1 ? `Загружаю ${list.length} фото…` : 'Загружаю фото…');
+  let first = null;
+  for (const f of list) {
+    try { const e = await addPhoto(f); if (!first) first = e; } catch (err) { console.error(err); }
+  }
+  if (!first) { say('Не удалось открыть фото'); return; }
+  el.photoGrid._sig = null;
+  setPhoto(first.id);
+  say(list.length > 1 ? `${list.length} фото в библиотеке — первое на слайде, остальные выбираются в блоке «Фото»` : 'Фото на слайде и в библиотеке — его можно ставить на любой слайд', 5000);
+}
+
 /* Выбор файла картинки (один общий input на все библиотеки). */
 function pickImage(onFile) {
   state.onImage = onFile;
@@ -260,7 +339,7 @@ function partnersOf(deck) {
 }
 
 function slideHtml(slide, index, deck, k, preview) {
-  return KINDS[slide.kind].render(slide.data, {
+  return renderSlide(slide.kind, slide.data, {
     k: Math.round(k * 1000) / 1000,
     num: pad2(index + 1),
     deck,
@@ -768,6 +847,12 @@ function updateNotes(s, fit) {
 /* Клик по тексту на сцене — фокус на нужное поле формы. */
 function focusField(path) {
   if (!path) return;
+  if (path === 'photo') {
+    el.photoBox.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    el.photoBox.classList.add('flash');
+    setTimeout(() => el.photoBox.classList.remove('flash'), 800);
+    return;
+  }
   const exact = el.form.querySelector(`[data-key="${CSS.escape(path)}"]`);
   const base = path.split('.')[0];
   const node = exact || el.form.querySelector(`[data-key="${CSS.escape(base)}"]`) || el.form.querySelector(`[data-key^="${CSS.escape(base)}."]`);
@@ -1035,6 +1120,7 @@ function buildLayouts() {
   const hidden = hiddenFields(s);
   el.hiddenNote.hidden = !hidden.length;
   if (hidden.length) el.hiddenNote.textContent = `Скрыто в этой раскладке: ${hidden.join(', ')}. Текст сохранён — вернётся при смене раскладки.`;
+  buildPhotos();
   buildGraphics();
 }
 
@@ -1199,8 +1285,9 @@ function rebuildFormKeepScroll() {
 function buildGraphics() {
   const s = currentSlide();
   const slot = s && SLOTS[s.kind];
-  el.gfxBox.hidden = !slot;
-  if (!slot) return;
+  // на слайде с фото графики нет — выбирать нечего
+  el.gfxBox.hidden = !slot || Boolean(photoOf(s.kind, s.data));
+  if (el.gfxBox.hidden) return;
   const d = deck();
   const defaultNone = !['cover', 'thesis', 'problem', 'benefits', 'whatwedo', 'list', 'quote', 'case', 'contacts'].includes(s.kind);
   const opts = GFX.filter(([v]) => !(defaultNone && v === 'none')).map(([v, name]) => ({ v, name: defaultNone && v === '' ? 'Без графики' : name }));
@@ -1264,6 +1351,109 @@ function setGfx(v) {
   s.data.gfx = v;
   changed();
   buildGraphics();
+}
+
+/* ----------------------------------------------------------------- фото */
+
+const PHOTO_PANEL_NOTE = { whatwedo: 'В этой раскладке фото — справа: слева синяя панель', case: 'В «Кейсе» фото стоит внизу синей панели, под цифрой' };
+function buildPhotos() {
+  const s = currentSlide();
+  if (!s) return;
+  const cur = s.data.photo && USER_ASSETS.photos.has(s.data.photo) ? s.data.photo : '';
+  const ids = [...USER_ASSETS.photos.keys()];
+  const sigAll = JSON.stringify(ids);
+  if (el.photoGrid._sig !== sigAll) {
+    el.photoGrid._sig = sigAll;
+    el.photoGrid.innerHTML = '';
+    const none = h('button', 'photo-tile none');
+    none.type = 'button';
+    none.dataset.v = '';
+    none.innerHTML = `${iconSvg('prohibit')}<span>Без фото</span>`;
+    none.addEventListener('click', () => setPhoto(''));
+    el.photoGrid.appendChild(none);
+    for (const a of USER_ASSETS.photos.values()) {
+      const b = h('button', 'photo-tile');
+      b.type = 'button';
+      b.dataset.v = a.id;
+      b.title = a.name;
+      const img = h('img');
+      img.src = a.thumb || a.url;
+      img.alt = a.name;
+      img.loading = 'lazy';
+      b.appendChild(img);
+      b.addEventListener('click', () => setPhoto(a.id));
+      const del = btn('x', 'Удалить из библиотеки', 'icon-btn xs tile-del');
+      del.addEventListener('click', async e => {
+        e.stopPropagation();
+        if (!confirm(`Удалить фото «${a.name}» из библиотеки? Со слайдов этой презентации оно тоже уберётся.`)) return;
+        await removePhoto(a.id);
+        let touched = false;
+        for (const sl of state.draft.slides) if (sl.data.photo === a.id) { sl.data.photo = ''; touched = true; }
+        el.photoGrid._sig = null;
+        buildPhotos();
+        if (touched) { buildLayouts(); changed(); } else renderStage();
+      });
+      b.appendChild(del);
+      el.photoGrid.appendChild(b);
+    }
+    const add = h('button', 'photo-tile add');
+    add.type = 'button';
+    add.innerHTML = `${iconSvg('upload-simple')}<span>Загрузить</span>`;
+    add.title = 'Загрузить свои фото (JPG, PNG, WEBP) — можно несколько сразу';
+    add.addEventListener('click', () => { el.photoInput.value = ''; el.photoInput.click(); });
+    el.photoGrid.appendChild(add);
+  }
+  for (const b of el.photoGrid.children) {
+    if (b.dataset.v == null) continue;
+    b.classList.toggle('on', b.dataset.v === cur);
+  }
+  const a = cur && USER_ASSETS.photos.get(cur);
+  el.photoName.textContent = a ? a.name : 'нет';
+  el.photoOpts.hidden = !a;
+  if (!a) return;
+  const modes = photoModes(s.kind);
+  const at = modes.includes(s.data.photoAt) ? s.data.photoAt : modes[0];
+  el.photoAt.hidden = modes.length < 2;
+  el.photoAtNote.hidden = modes.length > 1;
+  el.photoAtNote.textContent = PHOTO_PANEL_NOTE[s.kind] || '';
+  segFill(el.photoAt, PHOTO_AT.filter(([v]) => modes.includes(v)), at, v => setPhotoOpt('photoAt', v));
+  segFill(el.photoFocus, PHOTO_FOCUS, s.data.photoFocus || '', v => setPhotoOpt('photoFocus', v));
+}
+/* Сегментный переключатель из пар [значение, подпись]. */
+function segFill(box, opts, cur, onPick) {
+  const sig = JSON.stringify(opts);
+  if (box._sig !== sig) {
+    box._sig = sig;
+    box.innerHTML = '';
+    for (const [v, name] of opts) {
+      const b = h('button', '', name);
+      b.type = 'button';
+      b.dataset.v = v;
+      b.addEventListener('click', () => box._pick(v));
+      box.appendChild(b);
+    }
+  }
+  box._pick = onPick;
+  for (const b of box.children) b.classList.toggle('on', b.dataset.v === cur);
+}
+function setPhoto(v) {
+  const s = currentSlide();
+  if (!s) return;
+  if ((s.data.photo || '') !== v) {
+    pushUndo();
+    s.data.photo = v;
+    changed();
+  }
+  buildPhotos();
+  buildGraphics();
+}
+function setPhotoOpt(key, v) {
+  const s = currentSlide();
+  if (!s || (s.data[key] || '') === v) return;
+  pushUndo();
+  s.data[key] = v;
+  changed();
+  buildPhotos();
 }
 
 /* --------------------------------------------------------------- иконки */
@@ -1926,6 +2116,8 @@ async function exportPdf() {
   closePops();
   if (!preparePrint()) return;
   if (document.fonts && document.fonts.ready) await document.fonts.ready;
+  // фото должны успеть декодироваться, иначе в PDF будет пустое место
+  await Promise.all([...el.printRoot.querySelectorAll('img')].map(i => (i.decode ? i.decode().catch(() => {}) : null)));
   say('В окне печати выберите «Сохранить как PDF» — имя файла уже подставлено', 6000);
   setTimeout(() => window.print(), 60);
 }
@@ -2139,6 +2331,7 @@ const HELP = `
 <li>Кнопка <b>Aa</b> под превью делает текст на слайде мельче, если хочется больше воздуха.</li>
 <li>Вставьте несколько строк в пустой пункт — получится список.</li>
 <li><b>Иконки</b>: нажмите на номер пункта — откроется библиотека иконок с поиском. «Подобрать иконки» ставит их по смыслу текста сразу ко всем пунктам слайда, а в блоке «Презентация» — ко всем слайдам. Свои иконки (SVG, PNG) загружаются туда же.</li>
+<li><b>Фото</b>: на любой слайд — колонкой справа, слева или на половину слайда, текст подстроится. Перетащите фото прямо на слайд, вставьте ⌘V или нажмите «Загрузить» в блоке «Фото» (можно несколько сразу). Фото остаются в библиотеке этого браузера и ставятся на любой слайд; «Кадр» сдвигает, какую часть фото видно.</li>
 <li><b>Графика</b>: под раскладкой — варианты графики этого слайда (столбики, кольца, сетка, квадраты, диск, мозаика) и своя графика из библиотеки. «Как задумано» — графика по гайду.</li>
 <li>В пустой слайд можно вставить его кусок текста целиком — заголовок, абзац и пункты разложатся по полям сами.</li>
 </ul>
@@ -2290,6 +2483,36 @@ function wireEvents() {
     try { await cb(file); } catch (err) { console.error(err); say('Не удалось открыть картинку'); }
   });
   el.iconPop.addEventListener('click', e => e.stopPropagation());
+  el.photoInput.addEventListener('change', () => {
+    const files = [...el.photoInput.files];
+    el.photoInput.value = '';
+    if (files.length && state.draft) addPhotosToSlide(files);
+  });
+
+  // фото можно перетащить прямо на слайд или вставить из буфера (⌘V вне полей)
+  const hasFiles = e => e.dataTransfer && [...e.dataTransfer.types].includes('Files');
+  el.stage.addEventListener('dragover', e => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    el.stage.classList.add('drop');
+  });
+  el.stage.addEventListener('dragleave', e => { if (!el.stage.contains(e.relatedTarget)) el.stage.classList.remove('drop'); });
+  el.stage.addEventListener('drop', e => {
+    el.stage.classList.remove('drop');
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    addPhotosToSlide(e.dataTransfer.files);
+  });
+  document.addEventListener('paste', e => {
+    if (!state.draft || el.editor.hidden) return;
+    const t = e.target;
+    if (t && (t.closest('input, textarea, [contenteditable="true"]') || t.closest('.modal:not([hidden])'))) return;
+    const files = [...(e.clipboardData ? e.clipboardData.files : [])].filter(isImageFile);
+    if (!files.length) return;
+    e.preventDefault();
+    addPhotosToSlide(files);
+  });
 
   // сцена: клик по тексту → поле формы
   el.stageSlide.addEventListener('click', e => {
@@ -2385,6 +2608,12 @@ async function start() {
   history.replaceState({ screen: 'start' }, '', location.pathname + location.search);
   await loadFonts();
   syncAssets();
+  loadPhotos().then(() => {
+    if (!state.draft) return;
+    renderStage();
+    scheduleThumbs();
+    buildLayouts();
+  });
   buildStructures();
   buildDrafts();
   paintStructures();
