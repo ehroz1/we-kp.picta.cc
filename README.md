@@ -175,8 +175,8 @@
 
 1. В репозитории откройте **Settings → Pages**.
 2. **Source: Deploy from a branch**, ветка **main**, папка **/ (root)** → **Save**.
-3. В репозитории лежит `CNAME` с адресом `we-kp.picta.cc` — у домена должна
-   быть CNAME-запись на `<логин>.github.io`.
+3. Свой домен (необязательно): впишите его в **Custom domain** там же, а у
+   домена сделайте CNAME-запись на `<логин>.github.io`.
 
 `index.html`, `manifest.webmanifest` и `service-worker.js` всегда
 собираются и выкладываются вместе — офлайн-режим работает, только если все
