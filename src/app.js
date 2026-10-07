@@ -14,6 +14,10 @@ const STORE_DRAFTS = 'wekp.drafts.v1';
 const STORE_THEME = 'wekp.theme.v1';
 const STORE_START_TEXT = 'wekp.startText.v1';
 const STORE_INSTALL_DISMISSED = 'wekp.installDismissed.v1';
+const STORE_LOGOS = 'wekp.logos.v1';          // свои логотипы партнёров
+const STORE_GRAPHICS = 'wekp.graphics.v1';    // своя графика для слайдов
+const STORE_ICONS = 'wekp.icons.v1';          // свои иконки
+const PARTNERS_MAX = 3;
 const DRAFTS_LIMIT = 60;
 const UNDO_LIMIT = 100;
 const UNDO_COALESCE_MS = 900;
@@ -176,14 +180,91 @@ function wireInstallBanner() {
 
 /* ======================================================== отрисовка слайдов */
 
-function emptyDeck() { return { header: '', numbers: true, client: null }; }
+function emptyDeck() { return { header: '', numbers: true, partners: [], partnersMono: false }; }
+
+/* ============================================================ библиотеки */
+/*
+ * Свои логотипы, графика и иконки живут в localStorage этого браузера и
+ * доступны во всех КП. В черновике хранятся только их id («up:…»).
+ */
+function userLib(key) {
+  const v = storeGet(key, []);
+  return Array.isArray(v) ? v.filter(x => x && x.id && x.url) : [];
+}
+let logoIndex = null;
+function syncAssets() {
+  USER_ASSETS.icons = new Map(userLib(STORE_ICONS).map(a => [a.id, a]));
+  USER_ASSETS.graphics = new Map(userLib(STORE_GRAPHICS).map(a => [a.id, a]));
+  logoIndex = new Map([...PARTNER_LOGOS, ...userLib(STORE_LOGOS)].map(l => [l.id, l]));
+  fitCache.clear();
+}
+function allLogos() { return [...PARTNER_LOGOS, ...userLib(STORE_LOGOS)]; }
+
+let webpOk = null;
+function canWebp() {
+  if (webpOk == null) {
+    const c = document.createElement('canvas');
+    c.width = c.height = 1;
+    webpOk = c.toDataURL('image/webp').startsWith('data:image/webp');
+  }
+  return webpOk;
+}
+/* Картинка → data URL: SVG как есть, растр уменьшаем до max px (WebP с прозрачностью, иначе PNG). */
+function fileToDataUrl(file, max) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const url = reader.result;
+      if (file.type === 'image/svg+xml') { resolve(url); return; }
+      const img = new Image();
+      img.onload = () => {
+        const k = Math.min(1, max / Math.max(img.width, img.height));
+        const c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(img.width * k));
+        c.height = Math.max(1, Math.round(img.height * k));
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        resolve(canWebp() ? c.toDataURL('image/webp', 0.9) : c.toDataURL('image/png'));
+      };
+      img.onerror = reject;
+      img.src = url;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+async function addToLib(key, file, max) {
+  const url = await fileToDataUrl(file, max);
+  const entry = { id: `up:${uid()}`, name: file.name.replace(/\.[^.]+$/, '').slice(0, 40), url };
+  const list = userLib(key);
+  list.push(entry);
+  if (!storeSet(key, list)) { say('Не хватает места в браузере — удалите ненужные картинки из библиотеки'); return null; }
+  syncAssets();
+  return entry;
+}
+function removeFromLib(key, id) {
+  storeSet(key, userLib(key).filter(x => x.id !== id));
+  syncAssets();
+}
+/* Выбор файла картинки (один общий input на все библиотеки). */
+function pickImage(onFile) {
+  state.onImage = onFile;
+  el.imageInput.value = '';
+  el.imageInput.click();
+}
+
+/* Партнёры колоды → [{ url, name, mono }] для раскладок. */
+function partnersOf(deck) {
+  if (!logoIndex) syncAssets();
+  return (deck.partners || []).map(id => logoIndex.get(id)).filter(Boolean).slice(0, PARTNERS_MAX)
+    .map(l => ({ url: l.url, name: l.name, mono: Boolean(deck.partnersMono) && !l.id.startsWith('lib:') }));
+}
 
 function slideHtml(slide, index, deck, k, preview) {
   return KINDS[slide.kind].render(slide.data, {
     k: Math.round(k * 1000) / 1000,
     num: pad2(index + 1),
     deck,
-    client: deck.client && deck.client.url ? deck.client : null,
+    partners: partnersOf(deck),
     preview: Boolean(preview),
   });
 }
@@ -216,7 +297,7 @@ function fitSlide(slide, deck, kindOverride = null, steps = 7) {
   const kind = kindOverride || slide.kind;
   const data = kindOverride ? convertData(slide.data, slide.kind, kind) : slide.data;
   const maxK = maxKOf(slide);
-  const key = JSON.stringify([kind, data, maxK, Boolean(deck.client && deck.client.url)]);
+  const key = JSON.stringify([kind, data, maxK, (deck.partners || []).length]);
   const hit = fitCache.get(key);
   if (hit) return hit;
   const box = measureBox();
@@ -244,8 +325,13 @@ function fitSlide(slide, deck, kindOverride = null, steps = 7) {
   return res;
 }
 
-/* Миниатюра: слайд в натуральную величину внутри уменьшенной рамки. */
+/* Миниатюра: слайд в натуральную величину внутри уменьшенной рамки.
+   opts.kind — та же начинка в другой раскладке, opts.data — с другими данными (графика). */
 function miniHtml(slide, index, deck, opts = {}) {
+  if (opts.data) {
+    const probe = { kind: slide.kind, data: opts.data, tune: slide.tune };
+    return slideHtml(probe, index, deck, fitSlide(probe, deck, null, 5).k, opts.preview);
+  }
   const fit = opts.kind ? fitSlide(slide, deck, opts.kind, 5) : fitSlide(slide, deck);
   const probe = opts.kind ? { kind: opts.kind, data: convertData(slide.data, slide.kind, opts.kind) } : slide;
   return slideHtml(probe, index, deck, fit.k, opts.preview);
@@ -259,10 +345,29 @@ function paintMini(box, slide, index, deck, opts = {}) {
 
 function normalizeSlide(s) {
   const data = Object.assign(emptyData(), s.data || {});
-  data.items = (data.items || []).map(it => ({ title: it.title || '', text: it.text || '' }));
+  data.items = (data.items || []).map(it => ({ title: it.title || '', text: it.text || '', icon: it.icon || '' }));
   data.rows = (data.rows || []).map(r => Object.assign(emptyRow(), r));
   data.table = Object.assign({ corner: '', priceLabel: '', cols: [], rows: [] }, data.table || {});
   return { id: s.id || uid(), kind: KINDS[s.kind] ? s.kind : 'text', data, tune: Object.assign({ size: 100 }, s.tune || {}) };
+}
+/* Старые черновики: один «логотип клиента» → логотип в своей библиотеке и в партнёрах. */
+function migrateDeck(deck) {
+  const out = Object.assign(emptyDeck(), deck || {});
+  if (out.client && out.client.url) {
+    const list = userLib(STORE_LOGOS);
+    let entry = list.find(l => l.url === out.client.url);
+    if (!entry) {
+      entry = { id: `up:${uid()}`, name: 'Логотип клиента', url: out.client.url };
+      list.push(entry);
+      storeSet(STORE_LOGOS, list);
+      syncAssets();
+    }
+    if (!out.partners.includes(entry.id)) out.partners = [entry.id, ...out.partners].slice(0, PARTNERS_MAX);
+    out.partnersMono = Boolean(out.client.mono);
+  }
+  delete out.client;
+  out.partners = (out.partners || []).filter(id => typeof id === 'string');
+  return out;
 }
 function normalizeDraft(d) {
   return {
@@ -270,7 +375,7 @@ function normalizeDraft(d) {
     name: d.name || 'Коммерческое предложение',
     createdAt: d.createdAt || Date.now(),
     updatedAt: d.updatedAt || Date.now(),
-    deck: Object.assign(emptyDeck(), d.deck || {}),
+    deck: migrateDeck(d.deck),
     slides: (d.slides || []).map(normalizeSlide),
     source: d.source || '',
   };
@@ -346,14 +451,22 @@ function buildStructures() {
     tile.type = 'button';
     const stack = h('div', 'tile-thumb');
     const t1 = h('div', 'mini');
-    stack.appendChild(t1);
+    const strip = h('div', 'tile-strip');
+    const smalls = [1, 2, 3].map(() => h('div', 'mini'));
+    strip.append(...smalls);
+    stack.append(t1, strip);
     const info = h('div', 'tile-info');
     info.append(h('span', 'tile-name', st.name), h('span', 'tile-meta', `${slideCountText(st.slides.length)}`), h('span', 'tile-desc', st.desc));
     tile.append(stack, info);
     tile.addEventListener('click', () => openStructure(st));
     el.tplGrid.appendChild(tile);
     const slides = structureSlides(st, 'sample').map(s => normalizeSlide(s));
-    tile._paint = () => paintMini(t1, slides[0], 0, Object.assign(emptyDeck(), { header: st.header }));
+    tile._paint = () => {
+      const dk = Object.assign(emptyDeck(), { header: st.header });
+      paintMini(t1, slides[0], 0, dk);
+      // полоска следующих слайдов — чтобы структуры отличались с первого взгляда
+      smalls.forEach((m, j) => { if (slides[j + 1]) paintMini(m, slides[j + 1], j + 1, dk, { width: 90 }); });
+    };
   }
   const blank = h('button', 'tpl-tile blank');
   blank.type = 'button';
@@ -922,6 +1035,7 @@ function buildLayouts() {
   const hidden = hiddenFields(s);
   el.hiddenNote.hidden = !hidden.length;
   if (hidden.length) el.hiddenNote.textContent = `Скрыто в этой раскладке: ${hidden.join(', ')}. Текст сохранён — вернётся при смене раскладки.`;
+  buildGraphics();
 }
 
 function switchKind(kind) {
@@ -938,6 +1052,12 @@ function switchKind(kind) {
 
 /* ------------------------------------------------- оформление презентации */
 
+function deckSummary(d) {
+  const n = (d.partners || []).length;
+  return [d.header ? `«${d.header}»` : 'шапка пустая', d.numbers === false ? 'без номеров' : 'номера',
+    n ? `${n} ${plural(n, 'партнёр', 'партнёра', 'партнёров')}` : null].filter(Boolean).join(' · ');
+}
+
 function buildDeckBox() {
   const d = deck();
   const box = el.deckBox;
@@ -945,8 +1065,7 @@ function buildDeckBox() {
   const head = h('button', 'box-toggle');
   head.type = 'button';
   const open = Boolean(state.deckOpen);
-  const summary = [d.header ? `«${d.header}»` : 'шапка пустая', d.numbers === false ? 'без номеров' : 'номера', d.client && d.client.url ? 'лого клиента' : null].filter(Boolean).join(' · ');
-  head.innerHTML = `<span class="eyebrow">Презентация</span><span class="muted small ellipsis">${esc(summary)}</span>${iconSvg(open ? 'caret-up' : 'caret-down')}`;
+  head.innerHTML = `<span class="eyebrow">Презентация</span><span class="muted small ellipsis">${esc(deckSummary(d))}</span>${iconSvg(open ? 'caret-up' : 'caret-down')}`;
   head.addEventListener('click', () => { state.deckOpen = !state.deckOpen; buildDeckBox(); });
   box.appendChild(head);
   if (!open) return;
@@ -971,33 +1090,22 @@ function buildDeckBox() {
   f2.append(cb, h('span', '', 'Номера слайдов в шапке'));
   body.appendChild(f2);
 
-  const f3 = fieldWrap('Логотип клиента — на обложке и в контактах');
-  const row = h('div', 'logo-row');
-  if (d.client && d.client.url) {
-    const img = h('img', 'client-prev');
-    img.src = d.client.url;
-    img.alt = '';
-    const rm = h('button', 'btn btn-ghost btn-sm', 'Убрать');
-    rm.type = 'button';
-    rm.addEventListener('click', () => { pushUndo(); d.client = null; deckChanged(); buildDeckBox(); });
-    row.append(img, rm);
-  }
-  const up = h('button', 'btn btn-outline btn-sm');
-  up.type = 'button';
-  up.innerHTML = `${iconSvg('upload-simple')}${d.client && d.client.url ? 'Заменить' : 'Загрузить'}`;
-  up.addEventListener('click', () => el.logoInput.click());
-  row.appendChild(up);
-  f3.appendChild(row);
-  if (d.client && d.client.url) {
-    const t = h('label', 'toggle');
-    const mc = h('input');
-    mc.type = 'checkbox';
-    mc.checked = Boolean(d.client.mono);
-    mc.addEventListener('change', () => { pushUndo(); d.client.mono = mc.checked; deckChanged(); });
-    t.append(mc, h('span', '', 'В монохроме (чёрный)'));
-    f3.appendChild(t);
-  } else addHint(f3, 'PNG или SVG на прозрачном фоне. Встанет рядом с логотипом WE Media через тонкий разделитель.');
-  body.appendChild(f3);
+  body.appendChild(partnersField('Логотипы партнёров — на обложке и в контактах'));
+
+  const f4 = fieldWrap('Иконки к пунктам');
+  const row = h('div', 'row-actions');
+  const auto = h('button', 'btn btn-soft btn-sm');
+  auto.type = 'button';
+  auto.innerHTML = `${iconSvg('magic-wand')}Подобрать на всех слайдах`;
+  auto.addEventListener('click', () => autoIconsAll(true));
+  const off = h('button', 'btn btn-ghost btn-sm');
+  off.type = 'button';
+  off.textContent = 'Убрать все';
+  off.addEventListener('click', () => autoIconsAll(false));
+  row.append(auto, off);
+  f4.appendChild(row);
+  addHint(f4, 'Иконка подбирается по смыслу пункта: «Интервью» — микрофон, «Телефон» — трубка. Любую можно сменить, нажав на неё у пункта.');
+  body.appendChild(f4);
   box.appendChild(body);
 }
 
@@ -1005,33 +1113,252 @@ function deckChanged() {
   fitCache.clear();
   for (const t of el.slidesList.querySelectorAll('.thumb')) t._sig = null;
   changed();
-  const d = deck();
   const sum = el.deckBox.querySelector('.box-toggle .muted');
-  if (sum) sum.textContent = [d.header ? `«${d.header}»` : 'шапка пустая', d.numbers === false ? 'без номеров' : 'номера', d.client && d.client.url ? 'лого клиента' : null].filter(Boolean).join(' · ');
+  if (sum) sum.textContent = deckSummary(deck());
 }
 
-function logoFileToUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const url = reader.result;
-      if (file.type === 'image/svg+xml') { resolve(url); return; }
-      const img = new Image();
-      img.onload = () => {
-        const max = 800;
-        const k = Math.min(1, max / Math.max(img.width, img.height));
-        const c = document.createElement('canvas');
-        c.width = Math.round(img.width * k);
-        c.height = Math.round(img.height * k);
-        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-        resolve(c.toDataURL('image/png'));
-      };
-      img.onerror = reject;
-      img.src = url;
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
+/* ---------------------------------------------------- партнёры на обложке */
+
+function partnersField(label) {
+  const d = deck();
+  const f = fieldWrap(label);
+  f.dataset.key = 'partners';
+  const grid = h('div', 'logo-grid');
+  for (const l of allLogos()) {
+    const idx = d.partners.indexOf(l.id);
+    const t = h('button', `logo-tile${idx >= 0 ? ' on' : ''}`);
+    t.type = 'button';
+    t.title = idx >= 0 ? `${l.name} — убрать с обложки` : `${l.name} — поставить на обложку`;
+    const img = h('img');
+    img.src = l.url;
+    img.alt = l.name;
+    t.appendChild(img);
+    if (idx >= 0) t.appendChild(h('span', 'tile-badge', String(idx + 1)));
+    t.addEventListener('click', () => togglePartner(l.id));
+    if (!l.id.startsWith('lib:')) {
+      const del = btn('x', 'Удалить из библиотеки', 'icon-btn xs tile-del');
+      del.addEventListener('click', e => {
+        e.stopPropagation();
+        if (!confirm(`Удалить «${l.name}» из библиотеки логотипов? Он пропадёт и из других КП.`)) return;
+        removeFromLib(STORE_LOGOS, l.id);
+        d.partners = d.partners.filter(x => x !== l.id);
+        deckChanged();
+        rebuildPartners();
+      });
+      t.appendChild(del);
+    }
+    grid.appendChild(t);
+  }
+  const add = h('button', 'logo-tile add');
+  add.type = 'button';
+  add.innerHTML = `${iconSvg('upload-simple')}<span>Свой логотип</span>`;
+  add.addEventListener('click', () => pickImage(async file => {
+    const e = await addToLib(STORE_LOGOS, file, 800);
+    if (!e) return;
+    if (d.partners.length < PARTNERS_MAX) { pushUndo(); d.partners.push(e.id); }
+    deckChanged();
+    rebuildPartners();
+    say('Логотип сохранён в библиотеке и поставлен на обложку');
+  }));
+  grid.appendChild(add);
+  f.appendChild(grid);
+  if (d.partners.some(id => !id.startsWith('lib:'))) {
+    const t = h('label', 'toggle');
+    const mc = h('input');
+    mc.type = 'checkbox';
+    mc.checked = Boolean(d.partnersMono);
+    mc.addEventListener('change', () => { pushUndo(); d.partnersMono = mc.checked; deckChanged(); });
+    t.append(mc, h('span', '', 'Свои логотипы — в монохроме (чёрные)'));
+    f.appendChild(t);
+  }
+  addHint(f, `До ${PARTNERS_MAX} логотипов, встают рядом с WE Media через тонкий разделитель. Свои логотипы (PNG или SVG на прозрачном фоне) сохраняются в этом браузере для всех КП.`);
+  return f;
+}
+function togglePartner(id) {
+  const d = deck();
+  if (d.partners.includes(id)) { pushUndo(); d.partners = d.partners.filter(x => x !== id); }
+  else if (d.partners.length >= PARTNERS_MAX) { say(`На обложке помещается до ${PARTNERS_MAX} логотипов — сначала уберите один`); return; }
+  else { pushUndo(); d.partners.push(id); }
+  deckChanged();
+  rebuildPartners();
+}
+/* Блок партнёров есть и в «Презентации», и в форме обложки — обновляем оба. */
+function rebuildPartners() {
+  if (state.deckOpen) buildDeckBox();
+  const s = currentSlide();
+  if (s && kindFields(s.kind).includes('partners')) rebuildFormKeepScroll();
+}
+function rebuildFormKeepScroll() {
+  const top = el.formPanel.scrollTop;
+  buildForm();
+  el.formPanel.scrollTop = top;
+}
+
+/* ------------------------------------------------------------- графика */
+
+function buildGraphics() {
+  const s = currentSlide();
+  const slot = s && SLOTS[s.kind];
+  el.gfxBox.hidden = !slot;
+  if (!slot) return;
+  const d = deck();
+  const defaultNone = !['cover', 'thesis', 'problem', 'benefits', 'whatwedo', 'list', 'quote', 'case', 'contacts'].includes(s.kind);
+  const opts = GFX.filter(([v]) => !(defaultNone && v === 'none')).map(([v, name]) => ({ v, name: defaultNone && v === '' ? 'Без графики' : name }));
+  for (const a of USER_ASSETS.graphics.values()) opts.push({ v: a.id, name: a.name || 'Своя графика', user: true });
+  const cur = s.data.gfx || '';
+  const sigAll = JSON.stringify([s.kind, opts.map(o => o.v)]);
+  if (el.gfxGrid._sig !== sigAll) {
+    el.gfxGrid._sig = sigAll;
+    el.gfxGrid.innerHTML = '';
+    for (const o of opts) {
+      const b = h('button', 'layout-btn');
+      b.type = 'button';
+      b.dataset.v = o.v;
+      b.title = o.name;
+      b.append(h('div', 'mini'), h('span', '', o.name));
+      b.addEventListener('click', () => setGfx(o.v));
+      if (o.user) {
+        const del = btn('x', 'Удалить из библиотеки', 'icon-btn xs tile-del');
+        del.addEventListener('click', e => {
+          e.stopPropagation();
+          if (!confirm(`Удалить «${o.name}» из библиотеки графики? На слайдах вместо неё вернётся стандартная графика.`)) return;
+          removeFromLib(STORE_GRAPHICS, o.v);
+          for (const sl of state.draft.slides) if (sl.data.gfx === o.v) sl.data.gfx = '';
+          el.gfxGrid._sig = null;
+          buildGraphics();
+          changed();
+        });
+        b.appendChild(del);
+      }
+      el.gfxGrid.appendChild(b);
+    }
+    const add = h('button', 'layout-btn add');
+    add.type = 'button';
+    add.innerHTML = `<div class="mini add-mini">${iconSvg('upload-simple')}</div><span>Своя графика</span>`;
+    add.title = 'Загрузить свою картинку (PNG, SVG, WEBP) в библиотеку графики';
+    add.addEventListener('click', () => pickImage(async file => {
+      const e = await addToLib(STORE_GRAPHICS, file, 1600);
+      if (!e) return;
+      el.gfxGrid._sig = null;
+      setGfx(e.id);
+      say('Графика сохранена в библиотеке — её можно ставить на любой слайд');
+    }));
+    el.gfxGrid.appendChild(add);
+  }
+  el.gfxName.textContent = (opts.find(o => o.v === cur) || opts[0]).name;
+  for (const b of el.gfxGrid.children) {
+    if (b.dataset.v == null) continue;
+    b.classList.toggle('on', b.dataset.v === cur);
+    const m = b.firstChild;
+    const data = Object.assign({}, s.data, { gfx: b.dataset.v });
+    const sig = JSON.stringify([s.kind, data, d.partners]);
+    if (m._sig === sig) continue;
+    m._sig = sig;
+    paintMini(m, s, state.current, d, { data, width: 112 });
+  }
+}
+function setGfx(v) {
+  const s = currentSlide();
+  if (!s || (s.data.gfx || '') === v) { buildGraphics(); return; }
+  pushUndo();
+  s.data.gfx = v;
+  changed();
+  buildGraphics();
+}
+
+/* --------------------------------------------------------------- иконки */
+
+function iconRefHtml(ref) { return slideIcon(ref) || ''; }
+
+/* Окно выбора иконки: поиск, библиотека Phosphor, свои иконки, «без иконки». */
+function openIconPicker(anchor, current, onPick) {
+  closePops();
+  const pop = el.iconPop;
+  pop.innerHTML = '';
+  const search = h('input', 'ic-search');
+  search.type = 'search';
+  search.placeholder = 'Поиск: интервью, рост, деньги…';
+  const grid = h('div', 'ic-grid');
+  const paint = () => {
+    const q = search.value.trim().toLowerCase().replace(/ё/g, 'е');
+    grid.innerHTML = '';
+    const none = h('button', `ic none${!current ? ' on' : ''}`);
+    none.type = 'button';
+    none.title = 'Без иконки';
+    none.innerHTML = iconSvg('x');
+    none.addEventListener('click', () => { closePops(); onPick(''); });
+    grid.appendChild(none);
+    for (const a of USER_ASSETS.icons.values()) {
+      if (q && !(a.name || '').toLowerCase().includes(q)) continue;
+      const b = h('button', `ic user${current === a.id ? ' on' : ''}`);
+      b.type = 'button';
+      b.title = a.name || 'Своя иконка';
+      b.innerHTML = iconRefHtml(a.id);
+      b.addEventListener('click', () => { closePops(); onPick(a.id); });
+      b.addEventListener('contextmenu', e => {
+        e.preventDefault();
+        if (confirm(`Удалить свою иконку «${a.name}» из библиотеки?`)) { removeFromLib(STORE_ICONS, a.id); paint(); }
+      });
+      grid.appendChild(b);
+    }
+    for (const [name, ic] of Object.entries(SLIDE_ICONS)) {
+      if (q && !name.includes(q) && !ic.kw.toLowerCase().replace(/ё/g, 'е').split(/\s+/).some(w => w.startsWith(q) || q.startsWith(w))) continue;
+      const ref = `ph:${name}`;
+      const b = h('button', `ic${current === ref ? ' on' : ''}`);
+      b.type = 'button';
+      b.title = ic.kw.split(' ').slice(0, 3).join(', ');
+      b.innerHTML = iconRefHtml(ref);
+      b.addEventListener('click', () => { closePops(); onPick(ref); });
+      grid.appendChild(b);
+    }
+    if (grid.childElementCount <= 1) grid.appendChild(h('p', 'muted small ic-empty', 'Ничего не нашлось — попробуйте другое слово'));
+  };
+  search.addEventListener('input', paint);
+  const foot = h('div', 'ic-foot');
+  const up = h('button', 'btn btn-soft btn-sm');
+  up.type = 'button';
+  up.innerHTML = `${iconSvg('upload-simple')}Своя иконка`;
+  up.addEventListener('click', () => pickImage(async file => {
+    const e = await addToLib(STORE_ICONS, file, 256);
+    if (!e) return;
+    closePops();
+    onPick(e.id);
+    say('Иконка сохранена в вашей библиотеке');
+  }));
+  foot.append(up, h('span', 'muted small', 'SVG или PNG на прозрачном фоне'));
+  pop.append(search, grid, foot);
+  pop.hidden = false;
+  paint();
+  // слева от кнопки (форма справа), а если не помещается — справа
+  const r = anchor.getBoundingClientRect();
+  const pw = pop.offsetWidth, ph = pop.offsetHeight;
+  let left = r.left - pw - 12;
+  if (left < 8) left = r.right + 12;
+  pop.style.left = `${Math.max(8, Math.min(left, window.innerWidth - pw - 8))}px`;
+  pop.style.top = `${Math.max(8, Math.min(r.top - 24, window.innerHeight - ph - 8))}px`;
+  search.focus();
+}
+
+/* Подбор иконок по смыслу: для текущего слайда или для всех. */
+function autoIcons(s) {
+  const live = liveItems(s.data.items);
+  if (!live.length) return 0;
+  const refs = suggestIcons(live.map(e => e.it));
+  live.forEach((e, j) => { e.it.icon = refs[j]; });
+  return live.length;
+}
+function autoIconsAll(on) {
+  pushUndo();
+  let n = 0;
+  for (const s of state.draft.slides) {
+    if (!kindFields(s.kind).includes('items')) continue;
+    if (on) n += autoIcons(s);
+    else for (const it of s.data.items) if (it.icon) { it.icon = ''; n++; }
+  }
+  buildForm();
+  changed();
+  for (const t of el.slidesList.querySelectorAll('.thumb')) t._sig = null;
+  say(on ? `Иконки подобраны: ${n} ${plural(n, 'пункт', 'пункта', 'пунктов')}` : 'Иконки убраны — ⌘Z вернёт');
 }
 
 /* ================================================================== форма */
@@ -1156,6 +1483,7 @@ function fieldNode(s, key, label) {
       return wrap;
     }
     case 'items': return itemsField(s, label);
+    case 'partners': return partnersField(label);
     case 'rows': return rowsField(s, label);
     case 'table': return tableField(s, label);
     default: return null;
@@ -1205,7 +1533,14 @@ function itemsField(s, label) {
   const titleLabel = { contacts: 'Подпись (Телефон, Почта…)', stages: 'Название этапа' }[s.kind] || 'Заголовок пункта — по желанию';
   items.forEach((it, i) => {
     const row = h('div', 'item-row');
-    const num = h('span', 'item-num', pad2(i + 1));
+    const num = h('button', `item-num${it.icon ? ' has-ico' : ''}`);
+    num.type = 'button';
+    num.title = it.icon ? 'Сменить иконку пункта' : 'Добавить иконку к пункту';
+    num.innerHTML = it.icon ? iconRefHtml(it.icon) || pad2(i + 1) : `<span class="n">${pad2(i + 1)}</span><span class="plus">${iconSvg('plus')}</span>`;
+    num.addEventListener('click', e => {
+      e.stopPropagation();
+      openIconPicker(num, it.icon, ref => { pushUndo(); it.icon = ref; rebuildFormKeepScroll(); changed(); });
+    });
     const fields = h('div', 'item-fields');
     const t = textInput(it.title, false, v => { pushUndo(`${s.id}:items.${i}.title`); it.title = v; changed(); }, { placeholder: titleLabel, key: `items.${i}.title` });
     const d = textInput(it.text, true, v => { pushUndo(`${s.id}:items.${i}.text`); it.text = v; changed(); }, { rows: 1, placeholder: 'Текст пункта', key: `items.${i}.text` });
@@ -1243,11 +1578,25 @@ function itemsField(s, label) {
     list.appendChild(row);
   });
   wrap.appendChild(list);
+  const actions = h('div', 'row-actions');
   const add = h('button', 'btn btn-ghost btn-sm add-row');
   add.type = 'button';
   add.innerHTML = `${iconSvg('plus')}Пункт`;
   add.addEventListener('click', () => addItemAfter(items.length - 1));
-  wrap.appendChild(add);
+  const auto = h('button', 'btn btn-ghost btn-sm add-row');
+  auto.type = 'button';
+  const anyIcon = items.some(x => x.icon);
+  auto.innerHTML = `${iconSvg(anyIcon ? 'x' : 'magic-wand')}${anyIcon ? 'Убрать иконки' : 'Подобрать иконки'}`;
+  auto.title = anyIcon ? 'Убрать иконки у пунктов этого слайда' : 'Подобрать иконки к пунктам по смыслу текста';
+  auto.addEventListener('click', () => {
+    pushUndo();
+    if (anyIcon) items.forEach(x => { x.icon = ''; });
+    else autoIcons(s);
+    rebuildFormKeepScroll();
+    changed();
+  });
+  actions.append(add, auto);
+  wrap.appendChild(actions);
   addHint(wrap, 'Вставьте несколько строк в пустой пункт — получится список. «Название — описание» делится на заголовок и текст. ⌘Enter — новый пункт.');
   return wrap;
 
@@ -1783,16 +2132,18 @@ const HELP = `
 <p>Вставьте текст КП на первом экране (из буфера одной кнопкой или ⌘V) или перетащите файл Word (.docx) — справа сразу видно, какие получатся слайды. «Собрать презентацию» — и всё готово. В редакторе кнопка «Текст» сверху пересобирает слайды или добавляет новые в конец.</p>
 <h3>2. Правка</h3>
 <ul>
-<li>Слева — слайды: перетаскивайте, дублируйте, удаляйте. «+ Слайд» — любой из 13 типов.</li>
+<li>Слева — слайды: перетаскивайте, дублируйте, удаляйте. «+ Слайд» — любой из 17 типов, включая «Цифры», «Дорожную карту», «Кейс» и «Цитату».</li>
 <li>Справа — поля слайда. Щёлкните по тексту на превью — курсор встанет в нужное поле.</li>
 <li><b>Раскладка</b> — превью этого же слайда во всех вариантах. Один клик меняет вид, текст остаётся.</li>
 <li>Текст подстраивается сам: если не влезает, кегль уменьшается (не меньше 24 px). Если и так тесно — кнопка «Разбить на 2 слайда».</li>
 <li>Кнопка <b>Aa</b> под превью делает текст на слайде мельче, если хочется больше воздуха.</li>
 <li>Вставьте несколько строк в пустой пункт — получится список.</li>
+<li><b>Иконки</b>: нажмите на номер пункта — откроется библиотека иконок с поиском. «Подобрать иконки» ставит их по смыслу текста сразу ко всем пунктам слайда, а в блоке «Презентация» — ко всем слайдам. Свои иконки (SVG, PNG) загружаются туда же.</li>
+<li><b>Графика</b>: под раскладкой — варианты графики этого слайда (столбики, кольца, сетка, квадраты, диск, мозаика) и своя графика из библиотеки. «Как задумано» — графика по гайду.</li>
 <li>В пустой слайд можно вставить его кусок текста целиком — заголовок, абзац и пункты разложатся по полям сами.</li>
 </ul>
 <h3>3. Оформление</h3>
-<p>Блок «Презентация» справа: надпись в шапке, номера слайдов, логотип клиента. Цвета, шрифты и графика — строго по стилю WE Media, их менять не нужно.</p>
+<p>Блок «Презентация» справа: надпись в шапке, номера слайдов, логотипы партнёров (до трёх — из библиотеки WE media group или свои) и иконки на всех слайдах. Логотипы партнёров можно выбрать и прямо в полях обложки. Цвета и шрифты — строго по стилю WE Media.</p>
 <h3>4. Экспорт</h3>
 <p><b>Скачать PDF</b> — откроется окно печати: выберите «Сохранить как PDF». Слайды 1920×1080, текст остаётся текстом (лучше всего в Chrome, Edge или Яндекс Браузере). В меню рядом: PNG всех слайдов в ZIP, PNG текущего слайда и HTML-файл для показа. <b>▶</b> — показ на весь экран прямо отсюда.</p>
 <h3>Горячие клавиши</h3>
@@ -1808,13 +2159,14 @@ function collectElements() { for (const node of document.querySelectorAll('[id]'
 function closePops() {
   el.exportPop.hidden = true;
   el.addPop.hidden = true;
+  el.iconPop.hidden = true;
 }
 
 function closeTopModal() {
   if (!el.present.hidden) { closePresent(); return true; }
   for (const m of [el.syntaxModal, el.helpModal, el.checkModal, el.importModal]) if (!m.hidden) { m.hidden = true; return true; }
   if (!el.tplModal.hidden) { closeStructure(); return true; }
-  if (!el.exportPop.hidden || !el.addPop.hidden) { closePops(); return true; }
+  if (!el.exportPop.hidden || !el.addPop.hidden || !el.iconPop.hidden) { closePops(); return true; }
   return false;
 }
 
@@ -1929,19 +2281,15 @@ function wireEvents() {
   el.btnCheck.addEventListener('click', () => { paintCheck(); openModal(el.checkModal); });
   wireModal(el.checkModal, el.checkClose);
 
-  el.logoInput.addEventListener('change', async () => {
-    const file = el.logoInput.files[0];
-    el.logoInput.value = '';
-    if (!file || !state.draft) return;
-    try {
-      const url = await logoFileToUrl(file);
-      pushUndo();
-      state.draft.deck.client = { url, mono: false };
-      deckChanged();
-      buildDeckBox();
-      say('Логотип клиента добавлен на обложку и в контакты');
-    } catch { say('Не удалось открыть картинку'); }
+  el.imageInput.addEventListener('change', async () => {
+    const file = el.imageInput.files[0];
+    const cb = state.onImage;
+    state.onImage = null;
+    el.imageInput.value = '';
+    if (!file || !cb || !state.draft) return;
+    try { await cb(file); } catch (err) { console.error(err); say('Не удалось открыть картинку'); }
   });
+  el.iconPop.addEventListener('click', e => e.stopPropagation());
 
   // сцена: клик по тексту → поле формы
   el.stageSlide.addEventListener('click', e => {
@@ -2036,6 +2384,7 @@ async function start() {
   wireInstallBanner();
   history.replaceState({ screen: 'start' }, '', location.pathname + location.search);
   await loadFonts();
+  syncAssets();
   buildStructures();
   buildDrafts();
   paintStructures();

@@ -11,8 +11,13 @@
  *   k        — коэффициент «уместить» (подбирает app.js)
  *   num      — номер слайда «02»
  *   deck     — { header, numbers } — надпись в шапке и номера
- *   client   — { url, mono } логотип клиента или null
+ *   partners — [{ url, name, mono }] логотипы партнёров на обложке и в контактах
  *   preview  — true в редакторе: пустые поля показываются серыми подсказками
+ *
+ * У пунктов может быть иконка (item.icon: «ph:имя» из SLIDE_ICONS или «up:id»
+ * из своей библиотеки). У раскладок со «слотом графики» (SLOTS) графику можно
+ * сменить: data.gfx — '' (как задумано), 'none', мотив из GFX или «up:id».
+ * Свои картинки (иконки, графика) app.js кладёт в USER_ASSETS.
  *
  * Текст заказчика не меняется: typo() трогает только пробелы (неразрывные
  * после коротких слов, внутри чисел и перед тире), *звёздочки* дают синий акцент.
@@ -75,6 +80,27 @@ function paras(value, cls, hint, env, f) {
 
 /* --------------------------------------------------------- пункты */
 
+/* Свои загруженные картинки: app.js заполняет из localStorage. */
+const USER_ASSETS = { icons: new Map(), graphics: new Map() };
+
+/* Иконка пункта: Phosphor Duotone в цвете текста (синий / белый на синем) или своя картинка. */
+function slideIcon(ref) {
+  if (!has(ref)) return '';
+  if (ref.startsWith('ph:')) {
+    const ic = typeof SLIDE_ICONS !== 'undefined' && SLIDE_ICONS[ref.slice(3)];
+    return ic ? `<svg viewBox="0 0 256 256" fill="currentColor" aria-hidden="true">${ic.svg}</svg>` : '';
+  }
+  if (ref.startsWith('up:')) {
+    const a = USER_ASSETS.icons.get(ref);
+    return a ? `<img src="${esc(a.url)}" alt="">` : '';
+  }
+  return '';
+}
+function ico(it, cls) {
+  const inner = it && slideIcon(it.icon);
+  return inner ? `<span class="ico ${cls}">${inner}</span>` : '';
+}
+
 function liveItems(items) {
   return (items || []).map((it, i) => ({ it, i })).filter(({ it }) => has(it.title) || has(it.text));
 }
@@ -110,7 +136,7 @@ function colsBlock(entries, env, cls) {
   if (!entries.length) return '';
   const n = entries.length;
   const c = n <= 3 ? n : n === 4 ? 2 : 3;
-  return `<ul class="${cls}" style="--n:${c}" data-f="items">${entries.map(e => `<li>${itemInner(e, env)}</li>`).join('')}</ul>`;
+  return `<ul class="${cls}" style="--n:${c}" data-f="items">${entries.map(e => `<li>${ico(e.it, 'ico-col')}${itemInner(e, env)}</li>`).join('')}</ul>`;
 }
 
 /* Нумерованный список с линиями; при большом числе пунктов — в две колонки сверху вниз. */
@@ -122,14 +148,18 @@ function numList(entries, env, opts = {}) {
   const size = two ? sizeClass(rows + 2) : sizeClass(n);
   const style = two ? ` style="grid-template-rows:repeat(${rows},auto);grid-auto-flow:column"` : '';
   return `<ol class="nl ${size}${two ? ' two' : ''}"${style} data-f="items">${entries.map((e, j) =>
-    `<li class="${j === 0 || (two && j === rows) ? 'first' : ''}"><span class="n">${pad2(j + 1)}</span><span class="tx">${itemInner(e, env)}</span></li>`
+    `<li class="${j === 0 || (two && j === rows) ? 'first' : ''}"><span class="n">${ico(e.it, 'ico-n') || pad2(j + 1)}</span><span class="tx">${itemInner(e, env)}</span></li>`
   ).join('')}</ol>`;
 }
 
 /* Маркированный список с линиями (текст, пакет). */
 function markList(entries, env, cls = '') {
   if (!entries.length) return '';
-  return `<ul class="ml ${sizeClass(entries.length, 3, 5, 7)} ${cls}" data-f="items">${entries.map(e => `<li>${itemInner(e, env)}</li>`).join('')}</ul>`;
+  return `<ul class="ml ${sizeClass(entries.length, 3, 5, 7)} ${cls}" data-f="items">${entries.map(e => mlItem(e, env)).join('')}</ul>`;
+}
+function mlItem(e, env) {
+  const i = ico(e.it, 'ico-m');
+  return `<li${i ? ' class="has-ico"' : ''}>${i}${itemInner(e, env)}</li>`;
 }
 
 /* ===================================================== постоянные части */
@@ -155,9 +185,15 @@ function frame(kind, cls, env, body, opts = {}) {
     + '</div>';
 }
 
-function clientLogo(env) {
-  if (!env.client || !env.client.url) return '';
-  return `<span class="divi"></span><img class="client${env.client.mono ? ' mono' : ''}" src="${esc(env.client.url)}" alt="">`;
+/* Логотипы партнёров рядом с логотипом WE Media через тонкий разделитель (до 3). */
+function partnersHtml(env) {
+  const list = (env.partners || []).filter(p => p && p.url).slice(0, 3);
+  if (!list.length) return '';
+  const n = list.length;
+  const hgt = [64, 60, 52][n - 1];
+  const mw = [380, 300, 240][n - 1];
+  return '<span class="divi"></span>' + list.map(p =>
+    `<img class="partner${p.mono ? ' mono' : ''}" src="${esc(p.url)}" alt="${esc(p.name || '')}" style="max-height:${hgt}px;max-width:${mw}px">`).join('');
 }
 
 /* ======================================================== графика */
@@ -207,6 +243,182 @@ function gridPanel() {
   }
   return `<div class="g g-grid">${litHtml}<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${rects}</svg></div>`;
 }
+function panelBg() { return '<div class="g g-grid"></div>'; }
+
+/* --------------------------------------------- сменная графика (библиотека) */
+
+/* Мотивы библиотеки — только геометрия из гайда: столбики, кольца, квадраты, круги. */
+const GFX = [
+  ['', 'Как задумано'],
+  ['none', 'Без графики'],
+  ['bars', 'Столбики'],
+  ['rings', 'Кольца'],
+  ['grid', 'Сетка'],
+  ['squares', 'Квадраты'],
+  ['disk', 'Диск'],
+  ['mosaic', 'Мозаика'],
+];
+
+/*
+ * Слот графики раскладки: прямоугольник, где графика не заденет текст и логотип,
+ * угол, от которого она «растёт», и тон (dark — на синем фоне, графика белая).
+ */
+const SLOTS = {
+  cover: { x: 1040, y: 220, w: 880, h: 860, anchor: 'br' },
+  thesis: { x: 1420, y: 500, w: 500, h: 580, anchor: 'br' },
+  problem: { x: 1240, y: 0, w: 680, h: 1080, anchor: 'panel' },
+  benefits: { x: 1360, y: 150, w: 560, h: 420, anchor: 'tr' },
+  whatwedo: { x: 120, y: 700, w: 456, h: 212, anchor: 'bl', tone: 'dark', clip: true },
+  list: { x: 300, y: 640, w: 480, h: 440, anchor: 'b' },
+  text: { x: 1560, y: 150, w: 360, h: 420, anchor: 'tr' },
+  timeline: { x: 1500, y: 150, w: 420, h: 330, anchor: 'tr' },
+  quote: { x: 1420, y: 500, w: 500, h: 580, anchor: 'br' },
+  case: { x: 1440, y: 700, w: 360, h: 212, anchor: 'br', tone: 'dark', clip: true },
+  contacts: { x: 1320, y: 420, w: 600, h: 660, anchor: 'br' },
+};
+
+/* Детерминированный «случайный» шум для мозаики — одинаковый при каждой отрисовке. */
+function noise(i, j, seed = 1) {
+  const v = Math.sin(i * 127.1 + j * 311.7 + seed * 74.7) * 43758.5453;
+  return v - Math.floor(v);
+}
+function px(v) { return Math.round(v * 10) / 10; }
+
+/*
+ * Точка, от которой «растёт» мотив: угол слота за краем слайда. У «tr» — середина
+ * правого края, чтобы кольца не задевали номер слайда; у слотов внутри панели
+ * (clip) — ровно угол слота, а сам мотив обрезается по слоту.
+ */
+function anchorPoint(b) {
+  const o = b.clip ? 0 : 40;
+  switch (b.anchor) {
+    case 'br': return [b.x + b.w + o, b.y + b.h + o];
+    case 'bl': return [b.x - o, b.y + b.h + o];
+    case 'tr': return [b.x + b.w + 30, b.y + b.h / 2];
+    case 'b': return [b.x + b.w / 2, b.y + b.h + 60];
+    default: return [b.x + b.w / 2, b.y + b.h / 2];
+  }
+}
+
+/* Радиус колец и диска под слот — так, чтобы не выйти за его пределы к тексту. */
+function motifRadius(b) {
+  if (b.anchor === 'panel') return Math.min(b.w, b.h) / 2 - 30;
+  if (b.anchor === 'tr') return b.h / 2 - 6;
+  if (b.anchor === 'b') return Math.min(b.w / 2, b.h);
+  if (b.clip) return Math.min(b.w, b.h) - 4;
+  return Math.min(b.w, b.h) + 20;
+}
+
+function motif(name, b) {
+  const dark = b.tone === 'dark';
+  const wt = dark ? ' wt' : '';
+  const out = [];
+  if (name === 'bars') {
+    if (b.anchor === 'tr') {
+      // от правого края — горизонтальные столбики, растут сверху вниз
+      const n = Math.max(3, Math.min(6, Math.round(b.h / 80)));
+      const gap = Math.max(12, b.h * 0.05);
+      const bh = (b.h - gap * (n - 1)) / n;
+      for (let i = 0; i < n; i++) {
+        const bw = b.w * (0.3 + 0.7 * i / (n - 1));
+        out.push(`<i class="g gb hz${wt}" style="left:${px(b.x + b.w - bw)}px;top:${px(b.y + i * (bh + gap))}px;width:${px(bw)}px;height:${px(bh)}px;opacity:${(0.35 + 0.65 * i / (n - 1)).toFixed(2)}">${GRAIN}</i>`);
+      }
+    } else {
+      const pad = b.anchor === 'panel' ? 72 : 0;
+      const x0 = b.x + pad, w = b.w - pad * 2, top = b.y + (b.anchor === 'panel' ? 200 : 0), hh = b.y + b.h - top;
+      const n = Math.max(3, Math.min(6, Math.round(w / 140)));
+      const gap = Math.max(12, Math.min(24, w * 0.03));
+      const bw = (w - gap * (n - 1)) / n;
+      for (let i = 0; i < n; i++) {
+        const bh = hh * (0.25 + 0.75 * i / (n - 1));
+        out.push(`<i class="g gb${wt}" style="left:${px(x0 + i * (bw + gap))}px;top:${px(b.y + b.h - bh)}px;width:${px(bw)}px;height:${px(bh)}px;opacity:${(0.35 + 0.65 * i / (n - 1)).toFixed(2)}">${GRAIN}</i>`);
+      }
+    }
+  } else if (name === 'rings') {
+    const [cx, cy] = anchorPoint(b);
+    const R = motifRadius(b);
+    out.push(rings(cx, cy, [0.46, 0.64, 0.82, 1].map(k => Math.round(R * k)), Math.round(R * 0.3)).replace(/class="g ring"/g, `class="g ring${wt}"`).replace(/class="g disk"/g, `class="g disk${wt}"`));
+  } else if (name === 'grid') {
+    const pitch = b.anchor === 'panel' ? 96 : 80, sq = pitch * 0.46;
+    const cols = Math.max(2, Math.floor(b.w / pitch)), rows = Math.max(2, Math.floor(b.h / pitch));
+    const ox = b.x + (b.w - cols * pitch) / 2 + (pitch - sq) / 2, oy = b.y + (b.h - rows * pitch) / 2 + (pitch - sq) / 2;
+    const [ax, ay] = anchorPoint(b);
+    const maxD = Math.hypot(b.w, b.h);
+    const lit = new Set();
+    for (let k = 0; k < 3; k++) lit.add(`${Math.floor(noise(k, 3) * cols)}:${Math.floor(noise(k, 7) * rows)}`);
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const x = ox + c * pitch, y = oy + r * pitch;
+        const d = Math.min(1, Math.hypot(x + sq / 2 - ax, y + sq / 2 - ay) / maxD);
+        const a = (0.07 + 0.5 * Math.pow(1 - d, 1.5)).toFixed(3);
+        if (lit.has(`${c}:${r}`)) {
+          out.push(`<i class="g glow" style="left:${px(x + sq / 2 - 110)}px;top:${px(y + sq / 2 - 110)}px"></i><i class="g lit${wt}" style="left:${px(x)}px;top:${px(y)}px;width:${px(sq)}px;height:${px(sq)}px">${GRAIN}</i>`);
+        } else {
+          out.push(`<i class="g sqo" style="left:${px(x)}px;top:${px(y)}px;width:${px(sq)}px;height:${px(sq)}px;border-color:${dark ? `rgba(255,255,255,${a})` : `rgba(0,68,255,${a})`}"></i>`);
+        }
+      }
+    }
+  } else if (name === 'squares') {
+    const s = Math.min(b.w / 456, b.h / 212, 2.4);
+    const sizes = [72, 136, 200].map(v => v * s), gap = 24 * s, total = sizes[0] + sizes[1] + sizes[2] + gap * 2;
+    let x = b.anchor === 'bl' ? b.x : b.anchor === 'br' || b.anchor === 'tr' ? b.x + b.w - total : b.x + (b.w - total) / 2;
+    const bottom = b.anchor === 'tr' ? b.y + sizes[2] : b.anchor === 'panel' ? b.y + b.h / 2 + sizes[2] / 2 : b.y + b.h;
+    sizes.forEach((sz, i) => {
+      out.push(`<i class="g gsq${wt} s${i}" style="left:${px(x)}px;top:${px(bottom - sz)}px;width:${px(sz)}px;height:${px(sz)}px">${dark ? '' : GRAIN}</i>`);
+      x += sz + gap;
+    });
+  } else if (name === 'disk') {
+    const [cx, cy] = anchorPoint(b);
+    const R = motifRadius(b) * (b.anchor === 'panel' ? 0.72 : 0.8);
+    out.push(`<i class="g disk${wt}" style="left:${px(cx - R)}px;top:${px(cy - R)}px;width:${px(R * 2)}px;height:${px(R * 2)}px">${dark ? '' : GRAIN}</i>`);
+    const r2 = R * 1.22;
+    out.push(`<i class="g ring${wt}" style="left:${px(cx - r2)}px;top:${px(cy - r2)}px;width:${px(r2 * 2)}px;height:${px(r2 * 2)}px"></i>`);
+  } else if (name === 'mosaic') {
+    const cell = b.anchor === 'panel' ? 68 : Math.max(36, Math.min(64, Math.min(b.w, b.h) / 6));
+    const cols = Math.floor(b.w / cell), rows = Math.floor(b.h / cell);
+    const ox = b.x + (b.w - cols * cell) / 2, oy = b.y + (b.h - rows * cell) / 2;
+    const [ax, ay] = anchorPoint(b);
+    const maxD = b.anchor === 'panel' ? Math.min(b.w, b.h) * 0.75 : Math.hypot(b.w, b.h);
+    const palette = dark
+      ? ['rgba(255,255,255,0.95)', 'rgba(255,255,255,0.6)', 'rgba(255,255,255,0.32)', 'rgba(255,255,255,0.18)']
+      : ['#0044FF', '#3D8BFF', '#5CC8FF', '#7B61FF', '#D6E0FF', '#E6EDFF'];
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const x = ox + c * cell, y = oy + r * cell;
+        const d = Math.min(1, Math.hypot(x + cell / 2 - ax, y + cell / 2 - ay) / maxD);
+        const pr = Math.pow(1 - d, 1.7) * 0.95;
+        if (noise(c, r, 5) > pr) continue;
+        const col = palette[Math.floor(noise(c, r, 9) * palette.length)];
+        const vivid = !dark && noise(c, r, 13) > 0.82;
+        const op = (0.45 + 0.55 * (1 - d)).toFixed(2);
+        out.push(`<i class="g msq${vivid ? ' v' : ''}" style="left:${px(x + 3)}px;top:${px(y + 3)}px;width:${px(cell - 6)}px;height:${px(cell - 6)}px;opacity:${op}${vivid ? '' : `;background:${col}`}">${vivid ? GRAIN : ''}</i>`);
+      }
+    }
+  }
+  return out.join('');
+}
+
+/* Своя картинка из библиотеки графики — вписывается в слот, прижимается к его углу. */
+function userGraphic(ref, b) {
+  const a = USER_ASSETS.graphics.get(ref);
+  if (!a) return '';
+  const pos = { br: 'right bottom', bl: 'left bottom', tr: 'right top', b: 'center bottom', panel: 'center' }[b.anchor] || 'center';
+  return `<img class="g g-img" src="${esc(a.url)}" alt="" style="left:${b.x}px;top:${b.y}px;width:${b.w}px;height:${b.h}px;object-fit:${b.anchor === 'panel' ? 'cover' : 'contain'};object-position:${pos}">`;
+}
+
+/* Графика слайда: «как задумано» — родная графика раскладки, иначе выбранная из библиотеки. */
+function gfx(kind, d, def) {
+  const slot = SLOTS[kind];
+  const g = d.gfx || '';
+  if (!slot || !g) return def;
+  if (g === 'none') return '';
+  if (g.startsWith('up:')) return userGraphic(g, slot);
+  if (slot.clip) {
+    // мотив внутри панели — обрезаем по слоту, чтобы не задеть логотип и текст
+    return `<div class="g gclip" style="left:${slot.x}px;top:${slot.y}px;width:${slot.w}px;height:${slot.h}px">${motif(g, Object.assign({}, slot, { x: 0, y: 0 }))}</div>`;
+  }
+  return motif(g, slot);
+}
 
 const ARROW = '<svg class="arr" viewBox="0 0 48 24" aria-hidden="true"><path d="M0 12H45M34 1.5 44.5 12 34 22.5" fill="none" stroke="currentColor" stroke-width="3.5"/></svg>';
 const CHECK = '<svg class="ck" viewBox="0 0 40 40" aria-hidden="true"><path d="M7 21.5 15.5 30 33 11" fill="none" stroke="currentColor" stroke-width="4.5"/></svg>';
@@ -228,10 +440,10 @@ const KINDS = {
     name: 'Обложка',
     group: 'start',
     about: 'Логотип сверху, крупный заголовок и подзаголовок слева внизу, растущие столбики справа.',
-    fields: [['note', 'Надпись над заголовком'], ['title', 'Заголовок'], ['lead', 'Подзаголовок']],
+    fields: [['note', 'Надпись над заголовком'], ['title', 'Заголовок'], ['lead', 'Подзаголовок'], ['partners', 'Логотипы партнёров']],
     render(d, env) {
-      return `<div class="sl sl-cover bg-cover" data-kind="cover" style="--k:${env.k}">${bars()}`
-        + `<div class="cv-top">${logoSvg()}${clientLogo(env)}</div>`
+      return `<div class="sl sl-cover bg-cover" data-kind="cover" style="--k:${env.k}">${gfx('cover', d, bars())}`
+        + `<div class="cv-top">${logoSvg()}${partnersHtml(env)}</div>`
         + `<div class="sl-body" data-fit>`
         + blk('p', 'cv-note', d.note, '', env, 'note')
         + blk('h1', 't-h1', d.title, 'Название предложения', env, 'title')
@@ -254,7 +466,7 @@ const KINDS = {
         + paras(d.lead, 't-lead mt-lead', '', env, 'lead')
         + colsBlock(items, env, 'cols')
         + blk('p', 't-note mt-note', d.note, '', env, 'note'),
-        { graphics: rings(1900, 1100, [270, 380, 490, 600], 180), bodyCls: items.length ? 'has-items' : 'centered' });
+        { graphics: gfx('thesis', d, rings(1900, 1100, [270, 380, 490, 600], 180)), bodyCls: items.length ? 'has-items' : 'centered' });
     },
   },
 
@@ -269,7 +481,7 @@ const KINDS = {
         + paras(d.lead, 't-lead mt-lead', '', env, 'lead')
         + colsBlock(itemsFor(d, env, 3, PH_ITEMS), env, 'cols push')
         + blk('p', 't-note mt-note', d.note, '', env, 'note'),
-        { graphics: gridPanel() });
+        { graphics: d.gfx ? panelBg() + gfx('problem', d, '') : gridPanel() });
     },
   },
 
@@ -282,13 +494,13 @@ const KINDS = {
       const entries = itemsFor(d, env, 3, PH_ITEMS);
       const n = entries.length <= 4 ? entries.length : 3;
       const cols = entries.length
-        ? `<ol class="bcols" style="--n:${n}" data-f="items">${entries.map((e, j) => `<li><span class="bn">${pad2(j + 1)}</span>${itemInner(e, env)}</li>`).join('')}</ol>`
+        ? `<ol class="bcols" style="--n:${n}" data-f="items">${entries.map((e, j) => `<li>${slideIcon(e.it.icon) ? `<span class="ico ico-tile">${GRAIN}${slideIcon(e.it.icon)}</span>` : `<span class="bn">${pad2(j + 1)}</span>`}${itemInner(e, env)}</li>`).join('')}</ol>`
         : '';
       return frame('benefits', 'bg-glow', env,
         `<div class="head-blk">${blk('h2', 't-h2', d.title, 'Зачем это клиенту', env, 'title')}${paras(d.lead, 't-lead mt-lead', '', env, 'lead')}</div>`
         + cols
         + blk('p', 't-note mt-note', d.note, '', env, 'note'),
-        { graphics: rings(1960, -40, [290, 410, 530, 650], 170) });
+        { graphics: gfx('benefits', d, rings(1960, -40, [290, 410, 530, 650], 170)) });
     },
   },
 
@@ -300,9 +512,10 @@ const KINDS = {
     render(d, env) {
       return `<div class="sl sl-wwd" data-kind="whatwedo" style="--k:${env.k}">`
         + `<div class="panel vivid">${GRAIN}</div>`
+        + (d.gfx ? gfx('whatwedo', d, '') : '')
         + head(env)
         + `<div class="sl-body" data-fit>`
-        + `<div class="lc on-blue" data-fit>${blk('h2', 't-h2', d.title, 'Что мы делаем', env, 'title')}${paras(d.lead, 't-desc', '', env, 'lead')}<div class="sq-row"><i></i><i></i><i></i></div></div>`
+        + `<div class="lc on-blue" data-fit>${blk('h2', 't-h2', d.title, 'Что мы делаем', env, 'title')}${paras(d.lead, 't-desc', '', env, 'lead')}${d.gfx ? '<div class="sq-row sq-space"></div>' : '<div class="sq-row"><i></i><i></i><i></i></div>'}</div>`
         + `<div class="rc" data-fit>${numList(itemsFor(d, env, 4, PH_ITEMS), env)}${blk('p', 't-note', d.note, '', env, 'note')}</div>`
         + `</div>${foot()}</div>`;
     },
@@ -320,7 +533,7 @@ const KINDS = {
       const c = n <= 4 ? Math.max(n, 1) : n <= 6 ? 3 : 4;
       const cards = n
         ? `<div class="cards${two ? ' two-rows' : ''}" style="--c:${c}" data-f="items">${entries.map((e, j) =>
-          `<div class="card${j === 0 ? ' vivid' : ''}">${j === 0 ? GRAIN : ''}<span class="bignum">${j + 1}</span><div class="cin" data-fit>${itemInner(e, env)}</div></div>`
+          `<div class="card${j === 0 ? ' vivid' : ''}">${j === 0 ? GRAIN : ''}<span class="bignum">${j + 1}</span><div class="cin" data-fit>${ico(e.it, 'ico-card')}${itemInner(e, env)}</div></div>`
         ).join('')}</div>`
         : '';
       return frame('stages', '', env,
@@ -340,7 +553,7 @@ const KINDS = {
       return frame('list', '', env,
         `<div class="lc" data-fit>${blk('h2', 't-h2', d.title, 'Форматы', env, 'title')}${paras(d.lead, 't-lead', '', env, 'lead')}</div>`
         + `<div class="rc" data-fit>${numList(itemsFor(d, env, 5, PH_ITEMS), env, { twoFrom: 9 })}${blk('p', 't-note', d.note, '', env, 'note')}</div>`,
-        { graphics: rings(-100, 1180, [260, 480, 600], 200) });
+        { graphics: gfx('list', d, rings(-100, 1180, [260, 480, 600], 200)) });
     },
   },
 
@@ -364,12 +577,13 @@ const KINDS = {
       let list = '';
       if (two) {
         const half = Math.ceil(items.length / 2);
-        list = `<ul class="ml ${sizeClass(half, 3, 5, 7)} two" style="grid-template-rows:repeat(${half},auto);grid-auto-flow:column" data-f="items">${items.map(e => `<li>${itemInner(e, env)}</li>`).join('')}</ul>`;
+        list = `<ul class="ml ${sizeClass(half, 3, 5, 7)} two" style="grid-template-rows:repeat(${half},auto);grid-auto-flow:column" data-f="items">${items.map(e => mlItem(e, env)).join('')}</ul>`;
       } else list = markList(items, env);
       return frame('text', 'bg-glow', env,
         blk('h2', 't-h2', d.title, '', env, 'title')
         + text + list
-        + blk('p', 't-note mt-note', d.note, '', env, 'note'));
+        + blk('p', 't-note mt-note', d.note, '', env, 'note'),
+        { graphics: gfx('text', d, '') });
     },
   },
 
@@ -381,7 +595,7 @@ const KINDS = {
     render(d, env) {
       const entries = itemsFor(d, env, 4, i => ['Тезис', 'Тезис', 'Тезис', 'Тезис'][i]);
       const chain = entries.length
-        ? `<div class="chain" data-f="items">${entries.map(e => `<div class="ci">${itemInner(e, env)}</div>`).join(ARROW)}</div>`
+        ? `<div class="chain" data-f="items">${entries.map(e => `<div class="ci">${ico(e.it, 'ico-ch')}${itemInner(e, env)}</div>`).join(ARROW)}</div>`
         : '';
       const big = has(d.big) ? `<span class="bigbg" data-f="big">${esc(d.big.trim())}</span>` : '';
       return `<div class="sl sl-summary blue${big ? '' : ' nobig'}${chain ? '' : ' nochain'}" data-kind="summary" style="--k:${env.k}">${GRAIN}${big}`
@@ -504,18 +718,128 @@ const KINDS = {
     },
   },
 
+  stats: {
+    name: 'Цифры',
+    group: 'meaning',
+    about: 'Крупные цифры в карточках: охват, результат, сроки. Первая карточка синяя, у каждой может быть иконка.',
+    fields: [['title', 'Заголовок'], ['lead', 'Лид — по желанию'], ['items', 'Цифры: число и подпись'], ['note', 'Сноска']],
+    render(d, env) {
+      const entries = itemsFor(d, env, 3, () => 'Число и подпись');
+      const n = entries.length;
+      const c = n <= 4 ? Math.max(n, 1) : 3;
+      const cards = n
+        ? `<div class="stats${n > 4 ? ' two-rows' : ''}" style="--c:${c}" data-f="items">${entries.map((e, j) => {
+          const it = e.it;
+          let inner;
+          if (e.ph) inner = `<span class="st-n">${ph(env, '120+')}</span><span class="st-l">${ph(env, 'подпись к цифре')}</span>`;
+          else if (has(it.title) && has(it.text)) inner = `<span class="st-n" data-f="items.${e.i}.title">${rich(it.title.trim())}</span><span class="st-l" data-f="items.${e.i}.text">${rich(it.text.trim())}</span>`;
+          else inner = `<span class="st-n" data-f="items.${e.i}.${has(it.title) ? 'title' : 'text'}">${rich((has(it.title) ? it.title : it.text).trim())}</span>`;
+          return `<div class="stat${j === 0 ? ' vivid' : ''}">${j === 0 ? GRAIN : ''}${ico(it, 'ico-stat')}<div class="st-in" data-fit>${inner}</div></div>`;
+        }).join('')}</div>`
+        : '';
+      return frame('stats', 'bg-glow', env,
+        blk('h2', 't-h2', d.title, 'В цифрах', env, 'title')
+        + paras(d.lead, 't-lead mt-lead', '', env, 'lead')
+        + cards
+        + blk('p', 't-note mt-note', d.note, '', env, 'note'));
+    },
+  },
+
+  timeline: {
+    name: 'Дорожная карта',
+    group: 'lists',
+    about: 'Линия с точками-шагами: срок сверху, описание снизу. С иконками точки становятся синими кругами.',
+    fields: [['title', 'Заголовок'], ['lead', 'Лид — по желанию'], ['items', 'Шаги: срок и описание'], ['note', 'Сноска']],
+    render(d, env) {
+      const entries = itemsFor(d, env, 4, i => `Месяц ${i + 1}`);
+      const n = entries.length;
+      const tl = n
+        ? `<ol class="tl${n > 5 ? ' dense' : ''}" style="--n:${n}" data-f="items">${entries.map((e, j) => {
+          const it = e.it;
+          const i = slideIcon(it.icon);
+          const t = e.ph ? ph(env, e.ph) : has(it.title) ? `<span data-f="items.${e.i}.title">${rich(it.title.trim())}</span>` : '';
+          const x = e.ph ? ph(env, 'Что происходит на этом шаге') : has(it.text) ? `<span data-f="items.${e.i}.text">${rich(it.text.trim())}</span>` : '';
+          return `<li class="${j === 0 ? 'first' : ''}${i ? ' has-ico' : ''}"><span class="tl-t">${t}</span><span class="tl-node">${i ? `<span class="ico ico-tl">${GRAIN}${i}</span>` : ''}</span><span class="tl-d">${x}</span></li>`;
+        }).join('')}</ol>`
+        : '';
+      return frame('timeline', 'bg-glow', env,
+        blk('h2', 't-h2', d.title, 'Дорожная карта', env, 'title')
+        + paras(d.lead, 't-lead mt-lead', '', env, 'lead')
+        + tl
+        + blk('p', 't-note mt-note', d.note, '', env, 'note'),
+        { graphics: gfx('timeline', d, '') });
+    },
+  },
+
+  quote: {
+    name: 'Цитата / отзыв',
+    group: 'meaning',
+    about: 'Крупная цитата клиента или эксперта, автор и должность; синий квадрат с кавычками, кольца в углу.',
+    fields: [['label', 'Надпись над цитатой'], ['title', 'Цитата'], ['lead', 'Автор'], ['note', 'Должность, компания']],
+    render(d, env) {
+      const mark = typeof SLIDE_ICONS !== 'undefined' && SLIDE_ICONS.quotes
+        ? `<div class="q-mark">${GRAIN}<svg viewBox="0 0 256 256" fill="currentColor" aria-hidden="true">${SLIDE_ICONS.quotes.svg}</svg></div>` : '';
+      const by = blk('p', 'q-author', d.lead, 'Имя Фамилия', env, 'lead') + blk('p', 'q-role', d.note, 'Должность, компания', env, 'note');
+      return frame('quote', 'bg-cover', env,
+        mark
+        + blk('p', 'q-label', d.label, '', env, 'label')
+        + blk('p', 't-thesis q-text', d.title, 'Слова клиента о работе с нами — одна-три фразы', env, 'title')
+        + (by ? `<div class="q-by">${by}</div>` : ''),
+        { graphics: gfx('quote', d, rings(1900, 1100, [270, 380, 490, 600], 180)), bodyCls: 'centered' });
+    },
+  },
+
+  case: {
+    name: 'Кейс',
+    group: 'meaning',
+    about: 'История проекта: задача, решение, результат; справа синяя панель с главной цифрой.',
+    fields: [['title', 'Название кейса'], ['lead', 'Клиент и контекст'], ['items', 'Задача, решение, результат'], ['big', 'Главная цифра'], ['label', 'Подпись к цифре'], ['note', 'Сноска']],
+    render(d, env) {
+      const entries = itemsFor(d, env, 3, i => ['Задача', 'Решение', 'Результат'][i]);
+      const rows = entries.length
+        ? `<ul class="cs-rows push" data-f="items">${entries.map((e, j) => {
+          const it = e.it;
+          if (e.ph) return `<li class="${j === 0 ? 'first' : ''}"><span class="cs-t">${ph(env, e.ph)}</span><span class="cs-d">${ph(env, 'Пара предложений')}</span></li>`;
+          const i = ico(it, 'ico-cs');
+          const t = has(it.title) ? `<span class="cs-t" data-f="items.${e.i}.title">${i}${rich(it.title.trim())}</span>` : '';
+          const x = has(it.text) ? `<span class="cs-d${t ? '' : ' wide'}" data-f="items.${e.i}.text">${t ? '' : i}${rich(it.text.trim())}</span>` : '';
+          return `<li class="${j === 0 ? 'first' : ''}">${t}${x}</li>`;
+        }).join('')}</ul>`
+        : '';
+      const bigText = has(d.big) ? d.big.trim() : '';
+      const len = bigText.length;
+      const bigSize = len <= 3 ? 220 : len <= 5 ? 168 : len <= 7 ? 124 : 96;
+      const big = bigText ? `<span class="cs-big" data-f="big" style="font-size:calc(${bigSize}px * var(--k))">${esc(bigText)}</span>`
+        : env.preview ? `<span class="cs-big" data-f="big" style="font-size:calc(168px * var(--k))">${ph(env, '+40%')}</span>` : '';
+      return `<div class="sl sl-case" data-kind="case" style="--k:${env.k}">`
+        + `<div class="cs-panel vivid">${GRAIN}</div>`
+        + `<div class="cs-pin on-blue" data-fit>${big}${blk('p', 'cs-label', d.label, 'подпись к цифре', env, 'label')}</div>`
+        + gfx('case', Object.assign({}, d, { gfx: d.gfx || 'squares' }), '')
+        + head(env)
+        + `<div class="sl-body" data-fit>`
+        + blk('h2', 't-h2', d.title, 'Кейс: название проекта', env, 'title')
+        + paras(d.lead, 't-lead mt-lead', '', env, 'lead')
+        + rows
+        + blk('p', 't-note mt-note', d.note, '', env, 'note')
+        + `</div>${foot()}</div>`;
+    },
+  },
+
   contacts: {
     name: 'Контакты',
     group: 'start',
     about: 'Финальный слайд: заголовок, текст и контакты, большие кольца справа.',
-    fields: [['title', 'Заголовок'], ['lead', 'Текст'], ['items', 'Контакты: подпись и значение'], ['note', 'Сноска']],
+    fields: [['title', 'Заголовок'], ['lead', 'Текст'], ['items', 'Контакты: подпись и значение'], ['note', 'Сноска'], ['partners', 'Логотипы партнёров']],
     render(d, env) {
       const entries = itemsFor(d, env, 3, i => ['Телефон', 'Почта', 'Сайт'][i]);
       const n = entries.length <= 2 ? Math.max(entries.length, 1) : entries.length === 4 ? 2 : 3;
-      const ct = entries.length ? `<ul class="ct" style="--n:${n}" data-f="items">${entries.map(e => `<li>${itemInner(e, env)}</li>`).join('')}</ul>` : '';
+      const ct = entries.length ? `<ul class="ct" style="--n:${n}" data-f="items">${entries.map(e => {
+        const i = ico(e.it, 'ico-ct');
+        return i ? `<li class="has-ico">${i}<div>${itemInner(e, env)}</div></li>` : `<li>${itemInner(e, env)}</li>`;
+      }).join('')}</ul>` : '';
       return `<div class="sl sl-contacts bg-cover" data-kind="contacts" style="--k:${env.k}">`
-        + rings(1960, 1160, [300, 420, 540, 660], 200)
-        + `<div class="cv-top">${logoSvg()}${clientLogo(env)}</div>`
+        + gfx('contacts', d, rings(1960, 1160, [300, 420, 540, 660], 200))
+        + `<div class="cv-top">${logoSvg()}${partnersHtml(env)}</div>`
         + `<div class="sl-body" data-fit>`
         + blk('h1', 't-h1', d.title, 'Спасибо!', env, 'title')
         + paras(d.lead, 't-lead', '', env, 'lead')
@@ -528,7 +852,7 @@ const KINDS = {
 
 const KIND_GROUPS = [
   { id: 'start', name: 'Начало и финал' },
-  { id: 'meaning', name: 'Смысл' },
+  { id: 'meaning', name: 'Смысл и доказательства' },
   { id: 'lists', name: 'Списки и этапы' },
   { id: 'money', name: 'Пакеты и деньги' },
 ];
@@ -550,6 +874,7 @@ function emptyData() {
   return {
     note: '', title: '', lead: '', items: [],
     label: '', price: '', level: 1, big: '',
+    gfx: '',
     rows: [],
     table: { corner: '', priceLabel: '', cols: [], rows: [] },
   };
@@ -571,7 +896,7 @@ function slideStrings(slide) {
       out.push(d.table.corner, d.table.priceLabel);
       for (const c of d.table.cols || []) out.push(c.name, c.price);
       for (const r of d.table.rows || []) out.push(r.name, ...(r.cells || []));
-    } else if (key !== 'level') out.push(d[key]);
+    } else if (key !== 'level' && key !== 'partners') out.push(d[key]);
   }
   return out.filter(has);
 }
@@ -746,6 +1071,41 @@ const SAMPLE = {
     ],
     note: 'Стоимость указана без НДС',
   },
+  stats: {
+    title: 'Программа в цифрах',
+    lead: 'Что получает руководитель за год работы с нами.',
+    items: [
+      { title: '120+', text: 'публикаций в деловых и отраслевых СМИ', icon: 'ph:newspaper' },
+      { title: '40', text: 'изданий в медиакарте программы', icon: 'ph:globe-hemisphere-east' },
+      { title: '12', text: 'месяцев системной работы', icon: 'ph:calendar-check' },
+    ],
+  },
+  timeline: {
+    title: 'Дорожная карта на 12 месяцев',
+    items: [
+      { title: '1 месяц', text: 'Аудит, позиционирование и карта тем' },
+      { title: '2–3 месяц', text: 'Первые колонки и комментарии в отраслевых СМИ' },
+      { title: '4–6 месяц', text: 'Интервью в деловых медиа и подкасты' },
+      { title: '7–12 месяц', text: 'Конференции, рейтинги и премии' },
+    ],
+  },
+  quote: {
+    label: 'Отзыв клиента',
+    title: 'За год о нашем директоре узнал весь рынок — теперь партнёры приходят к нам сами.',
+    lead: 'Имя Фамилия',
+    note: 'Генеральный директор, компания',
+  },
+  case: {
+    title: 'Кейс: голос финтеха в деловых медиа',
+    lead: 'Генеральный директор финтех-компании, 12 месяцев программы',
+    items: [
+      { title: 'Задача', text: 'Сделать руководителя заметным экспертом рынка платежей.' },
+      { title: 'Решение', text: 'Карта тем, две колонки в месяц, интервью и выступления на отраслевых конференциях.' },
+      { title: 'Результат', text: 'Руководитель вошёл в число самых цитируемых спикеров отрасли.' },
+    ],
+    big: '×3',
+    label: 'рост упоминаний в СМИ за год',
+  },
   contacts: {
     title: 'Обсудим вашу программу?',
     lead: 'Подготовим стратегию за 5 рабочих дней после встречи.',
@@ -806,6 +1166,13 @@ const STRUCTURES = [
     desc: 'Короткая история: ситуация клиента, что делаем, этапы, результат и стоимость.',
     header: 'Executive Visibility',
     slides: [['cover'], ['problem'], ['whatwedo'], ['stages'], ['summary'], ['pricing'], ['contacts']],
+  },
+  {
+    id: 'proof',
+    name: 'КП с кейсом и цифрами',
+    desc: 'Доказательная история: цифры, ситуация, что делаем, дорожная карта, кейс, отзыв клиента и стоимость.',
+    header: 'Executive Visibility',
+    slides: [['cover'], ['stats'], ['problem'], ['whatwedo'], ['timeline'], ['case'], ['quote'], ['pricing'], ['contacts']],
   },
   {
     id: 'short',

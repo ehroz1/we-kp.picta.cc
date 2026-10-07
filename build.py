@@ -7,6 +7,8 @@
     brand/fonts/    — Inter и Montserrat (TTF по весам)
     brand/logo/     — логотип WE Media Group (берётся только контур)
     brand/ui/       — иконки интерфейса Phosphor Bold
+    brand/icons/    — иконки для слайдов Phosphor Duotone (+ icons.json: ключевые слова)
+    brand/partners/ — логотипы WE media group для блока партнёров (+ names.json)
 
 Зерно для градиентных плашек (grain.png, 256×256, шум 0–15%) генерируется
 здесь же — детерминированно, чтобы сборка не менялась от запуска к запуску.
@@ -143,12 +145,35 @@ def ui_icons() -> str:
     return "const ICONS = " + json.dumps(out, ensure_ascii=False) + ";\n"
 
 
+def slide_icons() -> str:
+    """Иконки для слайдов: внутренняя разметка SVG (viewBox 256) и ключевые слова для поиска."""
+    folder = BRAND / "icons"
+    words = json.loads((folder / "icons.json").read_text(encoding="utf-8"))
+    out = {}
+    for name, kw in words.items():
+        svg = (folder / f"{name}.svg").read_text(encoding="utf-8")
+        inner = re.search(r"<svg[^>]*>(.*)</svg>", svg, re.S).group(1)
+        out[name] = {"svg": " ".join(inner.split()), "kw": kw}
+    print(f"иконок для слайдов: {len(out)}")
+    return "const SLIDE_ICONS = " + json.dumps(out, ensure_ascii=False) + ";\n"
+
+
+def partners() -> str:
+    """Логотипы партнёров (brand/partners/*.svg, имена — в names.json). Порядок — по имени файла."""
+    folder = BRAND / "partners"
+    names = json.loads((folder / "names.json").read_text(encoding="utf-8"))
+    out = [{"id": "lib:" + f.stem, "name": names.get(f.stem, f.stem), "url": data_url(f, "image/svg+xml")}
+           for f in sorted(folder.glob("*.svg"))]
+    print(f"логотипов партнёров: {len(out)}")
+    return "const PARTNER_LOGOS = " + json.dumps(out, ensure_ascii=False) + ";\n"
+
+
 def main() -> int:
     if not SRC.exists():
         print("нет папки src/ — запусти скрипт из корня проекта")
         return 1
 
-    assets_js = logo_js() + ui_icons()
+    assets_js = logo_js() + ui_icons() + slide_icons() + partners()
 
     icon_svg = BRAND / "pwa-icon.svg"
     icon_mask = BRAND / "pwa-icon-maskable.svg"

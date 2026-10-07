@@ -174,7 +174,7 @@ __CSS__
       </div>
     </section>
 
-    <aside class="form-panel" aria-label="Содержимое слайда">
+    <aside class="form-panel" id="formPanel" aria-label="Содержимое слайда">
       <section class="deck-box" id="deckBox"></section>
       <section class="layouts-box">
         <div class="box-head">
@@ -184,6 +184,13 @@ __CSS__
         <div class="layouts" id="layouts"></div>
         <p class="hidden-note" id="hiddenNote" hidden></p>
       </section>
+      <section class="layouts-box gfx-box" id="gfxBox" hidden>
+        <div class="box-head">
+          <span class="eyebrow">Графика</span>
+          <span class="muted small" id="gfxName"></span>
+        </div>
+        <div class="layouts" id="gfxGrid"></div>
+      </section>
       <div class="form" id="form"></div>
     </aside>
   </div>
@@ -191,6 +198,9 @@ __CSS__
 
 <!-- ================================================ меню «+ слайд» -->
 <div class="pop add-pop" id="addPop" hidden></div>
+
+<!-- ======================================================= выбор иконки -->
+<div class="pop icon-pop" id="iconPop" hidden></div>
 
 <!-- =================================================== вставка текста -->
 <div class="modal" id="importModal" hidden>
@@ -253,7 +263,7 @@ __CSS__
 </div>
 
 <p class="status" id="status" role="status" aria-live="polite"></p>
-<input type="file" id="logoInput" accept="image/png,image/svg+xml,image/webp,image/jpeg" hidden>
+<input type="file" id="imageInput" accept="image/png,image/svg+xml,image/webp,image/jpeg" hidden>
 <input type="file" id="textFileInput" accept=".docx,.txt,.md,.markdown,.html,.htm,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
 
 <!-- слайды для печати в PDF (заполняются перед печатью) -->

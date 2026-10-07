@@ -1,7 +1,9 @@
 /*
  * Оформление самого конструктора (не слайдов — те в slides.css и от темы не
- * зависят). Язык интерфейса — из стиля WE Media: прямые углы, Inter для
- * текста, Montserrat 800 для крупных заголовков, синий #0044FF как акцент.
+ * зависят). Цвета и шрифты — WE Media (Inter, Montserrat 800, синий #0044FF),
+ * форма элементов — как на edubridge.media: кнопки-пилюли, карточки со
+ * скруглением 20–28 и тонкой обводкой вместо теней, мягкие плашки-теги.
+ * Слайды при этом остаются с прямыми углами — так требует гайд.
  *
  * Все цвета — переменные ниже. Тёмные значения живут в двух блоках, которые
  * нужно держать одинаковыми: по системной настройке и по явному выбору
@@ -35,7 +37,10 @@
   --shadow: 0 1px 2px rgba(10, 10, 11, 0.06), 0 12px 40px rgba(10, 10, 11, 0.10);
   --stage-bg: #E3E8F2;
 
-  --radius: 2px;
+  --radius: 20px;      /* карточки */
+  --radius-lg: 28px;   /* окна, крупные блоки */
+  --radius-md: 16px;   /* миниатюры, плитки */
+  --radius-sm: 12px;   /* поля ввода, пункты меню */
   color-scheme: light;
 }
 
@@ -120,7 +125,7 @@ code { font: 500 13px/1.3 ui-monospace, SFMono-Regular, Menlo, Consolas, monospa
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   height: 40px; padding: 0 18px;
-  border: 0; border-radius: var(--radius);
+  border: 0; border-radius: 999px;
   font-weight: 600; font-size: 14px; white-space: nowrap;
   background: transparent;
   transition: background-color .15s, color .15s, box-shadow .15s, opacity .15s;
@@ -145,7 +150,7 @@ code { font: 500 13px/1.3 ui-monospace, SFMono-Regular, Menlo, Consolas, monospa
 .icon-btn {
   width: 40px; height: 40px; flex: none;
   display: inline-flex; align-items: center; justify-content: center;
-  border: 0; border-radius: var(--radius); background: transparent; color: var(--text);
+  border: 0; border-radius: 50%; background: transparent; color: var(--text);
 }
 .icon-btn svg { width: 20px; height: 20px; }
 .icon-btn:hover { background: var(--hover); }
@@ -156,16 +161,16 @@ code { font: 500 13px/1.3 ui-monospace, SFMono-Regular, Menlo, Consolas, monospa
 
 .chip-btn {
   display: inline-flex; align-items: center; gap: 6px;
-  height: 32px; padding: 0 12px; border: 0; border-radius: var(--radius);
+  height: 32px; padding: 0 14px; border: 0; border-radius: 999px;
   font-weight: 600; font-size: 13px; white-space: nowrap;
   background: var(--hover); color: var(--muted);
 }
 .chip-btn.ok { background: var(--ok-bg); color: var(--ok-text); }
 .chip-btn.warn { background: var(--warn-bg); color: var(--warn-text); }
 
-.seg { display: flex; padding: 3px; background: var(--hover); gap: 3px; border-radius: var(--radius); }
+.seg { display: flex; padding: 4px; background: var(--hover); gap: 4px; border-radius: 999px; }
 .seg button {
-  flex: 1; min-height: 36px; border: 0; background: transparent; border-radius: var(--radius);
+  flex: 1; min-height: 36px; border: 0; background: transparent; border-radius: 999px;
   font-weight: 600; font-size: 13px; color: var(--muted);
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
 }
@@ -257,6 +262,7 @@ code { font: 500 13px/1.3 ui-monospace, SFMono-Regular, Menlo, Consolas, monospa
 .tpl-tile:hover { border-color: var(--blue); }
 .tile-thumb { padding: 12px 12px 0; }
 .tile-thumb .mini { box-shadow: 0 0 0 1px var(--line); }
+.tile-strip { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
 .tile-info { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px 18px; }
 .tile-name { font: 800 17px/1.25 WEMontserrat, Montserrat, sans-serif; }
 .tile-meta { font-size: 12px; font-weight: 600; color: var(--blue); }
@@ -329,15 +335,15 @@ code { font: 500 13px/1.3 ui-monospace, SFMono-Regular, Menlo, Consolas, monospa
 .doc-title { flex: 1; min-width: 0; }
 .doc-title input {
   width: 100%; max-width: 520px; height: 38px; padding: 0 10px;
-  border: 1px solid transparent; border-radius: var(--radius); background: transparent;
+  border: 1px solid transparent; border-radius: var(--radius-sm); background: transparent;
   font: 700 16px/1 WEInter, Inter, sans-serif; outline: none;
 }
 .doc-title input:hover { border-color: var(--line); }
 .doc-title input:focus { border-color: var(--blue); box-shadow: var(--focus); background: var(--input); }
 .top-actions { display: flex; align-items: center; gap: 4px; }
 .split-btn { display: flex; margin-left: 6px; }
-.split-btn .btn:first-child { border-radius: var(--radius) 0 0 var(--radius); }
-.split-btn .caret { width: 38px; padding: 0; border-left: 1px solid rgba(255, 255, 255, 0.28); border-radius: 0 var(--radius) var(--radius) 0; }
+.split-btn .btn:first-child { border-radius: 999px 0 0 999px; padding-right: 16px; }
+.split-btn .caret { width: 42px; padding: 0 4px 0 0; border-left: 1px solid rgba(255, 255, 255, 0.28); border-radius: 0 999px 999px 0; }
 
 .pop {
   position: absolute; z-index: 40;
@@ -346,7 +352,7 @@ code { font: 500 13px/1.3 ui-monospace, SFMono-Regular, Menlo, Consolas, monospa
 .export-pop { right: 14px; top: 56px; width: 300px; padding: 6px; }
 .menu-item {
   display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
-  padding: 10px 12px; border: 0; background: none; border-radius: var(--radius);
+  padding: 10px 12px; border: 0; background: none; border-radius: var(--radius-sm);
 }
 .menu-item:hover { background: var(--hover); }
 .menu-item svg { width: 22px; height: 22px; fill: var(--blue); }
@@ -432,7 +438,7 @@ code { font: 500 13px/1.3 ui-monospace, SFMono-Regular, Menlo, Consolas, monospa
 .field { display: flex; flex-direction: column; min-width: 0; transition: background-color .3s; }
 .field.flash, .item-row.flash, .prow-ed.flash { background: var(--active-bg); }
 .field input[type="text"], .field textarea, .tbl-ed input, .tbl-ed textarea {
-  width: 100%; padding: 9px 11px; border: 1px solid var(--line-strong); border-radius: var(--radius);
+  width: 100%; padding: 10px 14px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm);
   background: var(--input); outline: none; line-height: 1.45; font-size: 14px;
   transition: border-color .15s, box-shadow .15s;
 }
@@ -448,7 +454,7 @@ code { font: 500 13px/1.3 ui-monospace, SFMono-Regular, Menlo, Consolas, monospa
 .field textarea.bulk, .fill-box textarea { resize: vertical; overflow: auto; min-height: 84px; border-style: dashed; }
 .fill-box { padding: 14px; background: var(--active-bg); display: flex; flex-direction: column; }
 .fill-box .label { color: var(--active-text); }
-.fill-box textarea { width: 100%; padding: 10px 12px; border: 1.5px dashed var(--blue); background: var(--input); outline: none; font-size: 14px; line-height: 1.45; border-radius: var(--radius); }
+.fill-box textarea { width: 100%; padding: 10px 12px; border: 1.5px dashed var(--blue); background: var(--input); outline: none; font-size: 14px; line-height: 1.45; border-radius: var(--radius-sm); }
 .fill-box textarea:focus { box-shadow: var(--focus); border-style: solid; }
 .item-row { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 8px; align-items: start; padding: 4px 0; transition: background-color .3s; }
 .item-num { font: 800 13px/38px WEMontserrat, Montserrat, sans-serif; color: var(--blue); }
@@ -465,7 +471,7 @@ code { font: 500 13px/1.3 ui-monospace, SFMono-Regular, Menlo, Consolas, monospa
 .pr-mid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 6px; }
 .pr-bottom { display: flex; align-items: center; gap: 8px; }
 .pr-bottom input { flex: 1; min-width: 0; }
-.prow-ed input[type="text"], .prow-ed textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--line-strong); background: var(--input); outline: none; font-size: 13px; border-radius: var(--radius); resize: none; overflow: hidden; }
+.prow-ed input[type="text"], .prow-ed textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--line-strong); background: var(--input); outline: none; font-size: 13px; border-radius: 10px; resize: none; overflow: hidden; }
 .prow-ed input:focus, .prow-ed textarea:focus { border-color: var(--blue); box-shadow: var(--focus); }
 .swatches { display: flex; gap: 4px; flex: none; }
 .sw { width: 24px; height: 24px; border: 0; padding: 0; box-shadow: inset 0 0 0 1px var(--line-strong); }
@@ -518,6 +524,127 @@ code { font: 500 13px/1.3 ui-monospace, SFMono-Regular, Menlo, Consolas, monospa
 
 #printRoot { display: none; }
 
+/* ======================================== скругления: как на edubridge.media */
+
+code { border-radius: 6px; }
+.mini { border-radius: 10px; }
+.hp-demo, .tpl-stage { border-radius: var(--radius-md); }
+.hero-preview { border-radius: var(--radius-lg); padding: 22px; }
+.paste-box textarea, .import-main textarea { border-radius: var(--radius); }
+.hp-cell .mini, .tile-thumb .mini, .strip-item, .strip-item .mini { border-radius: 12px; }
+.draft { border-radius: var(--radius); padding: 10px 10px 14px; }
+.draft .thumb { border-radius: 12px; }
+.tpl-tile { border-radius: var(--radius-lg); overflow: hidden; }
+.tpl-tile.blank .tile-thumb > div { border-radius: 14px; }
+.modal-card { border-radius: var(--radius-lg); }
+.pop { border-radius: var(--radius); }
+.add-item { border-radius: var(--radius-md); }
+.add-item .mini { border-radius: 10px; }
+.progress, .progress div { border-radius: 999px; }
+.check-line { border-radius: var(--radius-sm); }
+.status { border-radius: 999px; padding: 12px 22px; }
+.install-banner { border-radius: 0 0 var(--radius) var(--radius); }
+.chip-btn.check-chip { height: 36px; }
+
+/* редактор: панели — отдельные карточки на подложке */
+.editor { background: var(--bg); }
+.topbar { margin: 10px 10px 0; border: 1px solid var(--line); border-radius: var(--radius); height: 60px; }
+.workspace { gap: 10px; padding: 10px; }
+.slides-panel, .stage-panel, .form-panel { border: 1px solid var(--line); border-radius: var(--radius-lg); overflow: hidden; }
+.form-panel { overflow-y: auto; }
+.slides-panel { border-right: 1px solid var(--line); }
+.form-panel { border-left: 1px solid var(--line); }
+.stage-panel { border-radius: var(--radius-lg); }
+.stage-frame { border-radius: 14px; }
+.stage-bar { border-top: 1px solid var(--line); }
+.slide-item { border-radius: var(--radius-md); padding: 7px; }
+.slide-item .thumb { border-radius: 10px; }
+.slide-item .tools { border-radius: 999px; padding: 3px; }
+.slide-item.has-warn .cap::after { border-radius: 50%; }
+.add-slide .btn { height: 44px; }
+.export-pop { top: 64px; right: 4px; padding: 8px; }
+.deck-box, .layouts-box { margin: 10px 10px 0; border: 1px solid var(--line); border-radius: var(--radius); }
+.box-toggle { border-radius: var(--radius); }
+.layouts-box { padding: 14px 14px 16px; }
+.layout-btn { border-radius: 14px; padding: 5px; }
+.layout-btn .mini { border-radius: 9px; }
+.hidden-note { border-radius: var(--radius-sm); }
+.form { padding: 18px 20px 0; }
+.prow-ed { border-radius: var(--radius-md); }
+.fill-box { border-radius: var(--radius-md); }
+.sw { border-radius: 50%; }
+.client-prev { border-radius: 8px; }
+.toggle input { border-radius: 6px; }
+
+/* мягкая кнопка: голубая подложка, синий текст */
+.btn-soft { background: var(--active-bg); color: var(--active-text); }
+.btn-soft:hover { background: var(--blue); color: var(--on-accent); }
+.icon-btn.xs { width: 22px; height: 22px; }
+.icon-btn.xs svg { width: 12px; height: 12px; }
+
+/* --------------------------------------------- логотипы партнёров */
+
+.logo-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.logo-tile {
+  position: relative; height: 64px; padding: 10px 14px;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  border: 1px solid var(--line); border-radius: var(--radius-md); background: #FFFFFF; color: #0A0A0B;
+  transition: border-color .15s, box-shadow .15s;
+}
+.logo-tile img { max-width: 100%; max-height: 34px; object-fit: contain; display: block; }
+.logo-tile:hover { border-color: var(--blue); }
+.logo-tile.on { border-color: var(--blue); box-shadow: inset 0 0 0 1px var(--blue); background: #F3F6FF; }
+.logo-tile.add { background: var(--surface); color: var(--muted); border-style: dashed; flex-direction: column; font-size: 12px; font-weight: 600; }
+.logo-tile.add svg { width: 18px; height: 18px; fill: currentColor; }
+.logo-tile.add:hover { color: var(--blue); }
+.tile-badge {
+  position: absolute; left: 6px; top: 6px; min-width: 18px; height: 18px; padding: 0 5px;
+  border-radius: 999px; background: var(--blue); color: #FFFFFF; font: 700 11px/18px WEInter, Inter, sans-serif; text-align: center;
+}
+.tile-del { position: absolute; right: 4px; top: 4px; background: var(--surface); box-shadow: 0 0 0 1px var(--line); opacity: 0; transition: opacity .15s; }
+.logo-tile:hover .tile-del, .layout-btn:hover .tile-del { opacity: 1; }
+.layout-btn { position: relative; }
+.layout-btn.add .add-mini { display: grid; place-items: center; background: var(--well); color: var(--muted); border: 1.5px dashed var(--line-strong); }
+.layout-btn.add .add-mini svg { width: 22px; height: 22px; fill: currentColor; }
+.layout-btn.add:hover .add-mini { color: var(--blue); border-color: var(--blue); }
+
+/* ----------------------------------------------- иконки пунктов */
+
+.item-row { grid-template-columns: 40px minmax(0, 1fr) auto; }
+.item-num {
+  position: relative; width: 40px; height: 40px; padding: 0; margin-top: 0;
+  display: grid; place-items: center;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--surface);
+  font: 800 13px/1 WEMontserrat, Montserrat, sans-serif; color: var(--blue);
+}
+.item-num .plus { display: none; }
+.item-num:hover { border-color: var(--blue); background: var(--active-bg); }
+.item-num:hover .n { display: none; }
+.item-num:hover .plus { display: grid; }
+.item-num .plus svg { width: 16px; height: 16px; fill: var(--blue); }
+.item-num.has-ico { background: var(--active-bg); border-color: transparent; color: var(--blue); }
+.item-num.has-ico svg, .item-num.has-ico img { width: 24px; height: 24px; display: block; object-fit: contain; }
+.row-actions { flex-wrap: wrap; }
+
+.icon-pop { position: fixed; z-index: 70; width: 380px; max-width: calc(100vw - 16px); padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.ic-search {
+  width: 100%; height: 40px; padding: 0 16px; border: 1px solid var(--line-strong); border-radius: 999px;
+  background: var(--input); outline: none; font-size: 14px;
+}
+.ic-search:focus { border-color: var(--blue); box-shadow: var(--focus); }
+.ic-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; max-height: 300px; overflow-y: auto; scrollbar-width: thin; padding: 2px; }
+.ic {
+  aspect-ratio: 1; display: grid; place-items: center; padding: 8px;
+  border: 0; border-radius: 12px; background: transparent; color: var(--blue);
+}
+.ic svg, .ic img { width: 100%; height: 100%; display: block; object-fit: contain; }
+.ic:hover { background: var(--active-bg); }
+.ic.on { background: var(--blue); color: #FFFFFF; }
+.ic.none { color: var(--muted); }
+.ic.none svg { width: 60%; height: 60%; fill: currentColor; }
+.ic-empty { grid-column: 1 / -1; padding: 12px 4px; }
+.ic-foot { display: flex; align-items: center; gap: 10px; padding-top: 4px; border-top: 1px solid var(--line); }
+
 /* -------------------------------------------------------- PDF: печать */
 
 @page { size: 1920px 1080px; margin: 0; }
@@ -551,13 +678,16 @@ code { font: 500 13px/1.3 ui-monospace, SFMono-Regular, Menlo, Consolas, monospa
   .workspace { display: flex; flex-direction: column; }
   .stage-panel { order: 1; }
   .stage { height: 56vw; min-height: 200px; padding: 12px; flex: none; }
-  .slides-panel { order: 2; border-right: 0; border-bottom: 1px solid var(--line); }
+  .slides-panel { order: 2; }
   .slides-list { flex-direction: row; overflow-x: auto; overflow-y: hidden; padding: 8px; }
   .slide-item { flex: none; width: 150px; }
   .slide-item .tools { display: none; }
   .add-slide { padding: 0 8px 8px; }
-  .form-panel { order: 3; border-left: 0; overflow: visible; }
-  .topbar { gap: 4px; padding: 0 6px; }
+  .form-panel { order: 3; overflow: visible; }
+  .workspace { padding: 8px; gap: 8px; }
+  .topbar { gap: 4px; padding: 0 6px; margin: 8px 8px 0; }
+  .icon-pop { width: calc(100vw - 16px); }
+  .ic-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
   .modal { padding: 8px; }
   .modal-card { padding: 22px 18px; }
   .tpl-kinds { columns: 1; }

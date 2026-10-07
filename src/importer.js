@@ -541,11 +541,15 @@ function itemFrom(text) {
 
 const INTENTS = [
   ['contacts', /контакт|связ[ьа]т|свяжи|обсуд|спасибо|до встречи|ждём|ждем|напишите|звоните/i],
+  ['quote', /отзыв|цитат|говорят о нас|что говорят|рекомендац|мнение клиент/i],
+  ['case', /кейс|история успеха|пример работы|реализованн|наш опыт/i],
   ['compare', /сравнени|сравнит/i],
   ['pricing', /стоимост|цен[аы]\b|цены|оплат|бюджет|инвестиц|прайс|расч[её]т/i],
   ['packages', /пакет|тариф|варианты (сотрудничества|участия)|уровни/i],
+  ['stats', /в цифрах|цифры|факты|показател|статистик|достижени|охват/i],
   ['summary', /итог|результат|резюм|что (вы )?получ|эффект|вывод|в сухом остатке/i],
-  ['stages', /этап|шаг[иов]?\b|план|как (мы )?работа|процесс|дорожн|roadmap|таймлайн|график|сроки|календар/i],
+  ['timeline', /дорожн|таймлайн|timeline|roadmap|по месяцам|календарн|график работ|сроки/i],
+  ['stages', /этап|шаг[иов]?\b|план|как (мы )?работа|процесс/i],
   ['problem', /проблем|вызов|контекст|ситуац|почему сейчас|боль|сложност|рынок|сегодня/i],
   ['benefits', /зачем|почему|польз|преимуществ|ценност|выгод|для чего|что (это )?да[её]т|что вы получите/i],
   ['whatwedo', /что (мы )?(делаем|предлагаем|сделаем)|решени|подход|наше предложение|механик|как это работает|услуг|предлагаем/i],
@@ -564,6 +568,21 @@ function levelOf(name, idx) {
   if (/\bpro\b|standard|стандарт|optimum|оптим|business|бизнес|silver/i.test(name)) return 2;
   if (/base|basic|start|старт|lite|light|базов/i.test(name)) return 1;
   return Math.min(3, idx + 1);
+}
+
+/* «120+», «40 %», «×3», «1,5 млн» — число как заголовок карточки «Цифры». */
+const NUM_TITLE = /^[~≈<>+−\-×]?\s?\d[\d\s.,]*\s?(%|\+|x|х|×|млн\.?|млрд\.?|тыс\.?|k|m|₸|₽|\$|€)?\+?$/i;
+const NUM_LEAD = /^([~≈<>+−\-×]?\s?\d[\d\s.,]*\s?(?:%|\+|x|х|×|млн\.?|млрд\.?|тыс\.?|k|m|₸|₽|\$|€)?\+?)\s+(\S.*)$/i;
+/* «1 месяц», «2–3 неделя», «Q1», «Январь», «2026» — срок шага дорожной карты. */
+const TIME_TITLE = /^(\d+\s?([–-]\s?\d+)?\s?-?(й|я)?\s?(мес|месяц|недел|день|дня|дней|квартал|год)|(месяц|неделя|квартал|этап|шаг|день|фаза)\s?\d|q[1-4]\b|(янв|фев|мар|апр|ма[йя]|июн|июл|авг|сен|окт|ноя|дек)|20\d\d)/i;
+
+/* Пункты «120+ публикаций в СМИ» → { title: '120+', text: 'публикаций в СМИ' }. */
+function statItems(items) {
+  return items.map(it => {
+    if (has(it.title) || !has(it.text)) return it;
+    const m = it.text.match(NUM_LEAD);
+    return m && m[1].replace(/\D/g, '').length <= 7 ? { title: m[1].trim(), text: m[2].trim() } : it;
+  });
 }
 
 function priceLike(s) { return PRICE_LINE.test(s) && /\d/.test(s); }
@@ -684,6 +703,15 @@ function sectionSlides(sec, ctx) {
     return out;
   }
 
+  /* Цитата: подпись раздела — надпись, самая длинная строка — цитата, следующие — автор и должность. */
+  if (intent === 'quote' && bs.length && bs.length <= 5 && !bs.some(x => x.type === 'table')) {
+    const texts = bs.map(x => x.text);
+    const qi = texts.reduce((a, t, i) => (t.length > texts[a].length ? i : a), 0);
+    const rest = texts.filter((_, i) => i !== qi);
+    out.push(mk('quote', { label: title, title: texts[qi], lead: rest[0] || '', note: rest.slice(1).join('\n') }));
+    return out;
+  }
+
   const d = digest(sec.blocks);
   const { paras, items, tables } = d;
 
@@ -725,6 +753,32 @@ function sectionSlides(sec, ctx) {
     const rest = items.length ? paras : paras.filter(p => p.length > 90);
     out.push(mk('contacts', { title, lead: rest.join('\n\n'), items: its.slice(0, 6) }));
     if (its.length > 6) out.push(mk('text', { items: its.slice(6) }));
+    return out;
+  }
+
+
+  /* Кейс: задача, решение, результат — пунктами; число из результата — крупно на панели. */
+  if (intent === 'case' && items.length >= 1 && items.length <= 4) {
+    const slide = mk('case', { title, lead: paras.join('\n\n'), items });
+    const res = items.find(it => /результат|итог|эффект/i.test(it.title)) || items[items.length - 1];
+    const m = `${res.title} ${res.text}`.match(/(×\s?\d+([.,]\d+)?|[+−-]\s?\d+([.,]\d+)?\s?%|\d+([.,]\d+)?\s?%|в\s\d+\s?раз[а]?)/i);
+    if (m) slide.data.big = m[1].replace(/^в\s/i, '×').replace(/\s?раз[а]?$/i, '');
+    out.push(slide);
+    return out;
+  }
+
+  /* Цифры: раздел «в цифрах» или пункты, начинающиеся с числа. */
+  const asStats = statItems(items);
+  const numeric = asStats.filter(it => NUM_TITLE.test((it.title || '').trim())).length;
+  if ((intent === 'stats' && numeric >= 1 && asStats.length <= 6) || (asStats.length >= 2 && asStats.length <= 6 && numeric >= Math.ceil(asStats.length * 0.66) && intent !== 'pricing')) {
+    out.push(mk('stats', { title, lead: paras.join('\n\n'), items: asStats }));
+    return out;
+  }
+
+  /* Дорожная карта: раздел про сроки или пункты-сроки («1 месяц», «Q1»). */
+  const timed = items.filter(it => TIME_TITLE.test((it.title || '').trim())).length;
+  if (items.length >= 2 && items.length <= 8 && (intent === 'timeline' || timed >= Math.ceil(items.length * 0.66))) {
+    out.push(mk('timeline', { title, lead: paras.join('\n\n'), items }));
     return out;
   }
 
@@ -834,6 +888,58 @@ function importText(text) {
   const cTitle = slides[0].data.title.replace(/\*/g, '');
   const header = cTitle.length <= 40 ? cTitle : '';
   return { slides, header };
+}
+
+/* =============================================== автоподбор иконок к пунктам */
+
+const FALLBACK_ICONS = ['sparkle', 'target', 'lightbulb', 'rocket-launch', 'star', 'trend-up', 'shield-check', 'handshake', 'check-circle', 'flag'];
+let iconStems = null;
+function stemsOf() {
+  if (!iconStems) {
+    const all = typeof SLIDE_ICONS !== 'undefined' ? SLIDE_ICONS : {};
+    iconStems = Object.entries(all).map(([name, ic]) => [name, ic.kw.toLowerCase().replace(/ё/g, 'е').split(/\s+/).filter(Boolean)]);
+  }
+  return iconStems;
+}
+
+/* Иконка по смыслу: контакты — по формату, остальное — по ключевым словам;
+   совпадения в заголовке пункта весят втрое больше, чем в тексте. */
+function suggestIcon(title, text = '', used = new Set()) {
+  const raw = `${title} ${text}`;
+  if (EMAIL.test(raw)) return 'envelope-simple';
+  if (/telegram|телеграм|t\.me\//i.test(raw)) return 'telegram-logo';
+  if (/instagram|инстаграм/i.test(raw)) return 'instagram-logo';
+  if (/linkedin|линкедин/i.test(raw)) return 'linkedin-logo';
+  if (/whatsapp|ватсап/i.test(raw)) return 'whatsapp-logo';
+  if (/youtube|ютуб/i.test(raw)) return 'youtube-logo';
+  if (PHONE.test(raw) && /\+|\(/.test(raw)) return 'phone';
+  if (URL_RE.test(raw)) return 'globe';
+  const wordsOf = t => String(t).toLowerCase().replace(/ё/g, 'е').match(/[\p{L}\p{N}]+/gu) || [];
+  const tw = wordsOf(title), xw = wordsOf(text);
+  const hit = (words, st) => words.some(w => w.startsWith(st) || (st.length >= 5 && w.includes(st)));
+  let best = null, bestScore = 0;
+  for (const [name, stems] of stemsOf()) {
+    if (used.has(name)) continue;   // на одном слайде иконки не повторяются — берём следующую по смыслу
+    let score = 0;
+    for (const st of stems) {
+      const weight = st.length >= 4 ? 2 : 1;
+      if (hit(tw, st)) score += weight * 3;
+      else if (hit(xw, st)) score += weight;
+    }
+    if (score > bestScore) { best = name; bestScore = score; }
+  }
+  return best;
+}
+
+/* Иконки для всех пунктов слайда: без повторов, если не нашлось — нейтральная из запасных. */
+function suggestIcons(items) {
+  const used = new Set();
+  return items.map(it => {
+    let name = suggestIcon(it.title || '', it.text || '', used);
+    if (!name || used.has(name)) name = FALLBACK_ICONS.find(f => !used.has(f)) || name || 'sparkle';
+    used.add(name);
+    return `ph:${name}`;
+  });
 }
 
 /* ======================================================== сверка текста */
