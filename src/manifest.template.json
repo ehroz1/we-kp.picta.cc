@@ -1,0 +1,15 @@
+{
+  "name": "Конструктор КП · WE Media",
+  "short_name": "КП WE Media",
+  "description": "Коммерческие предложения в стиле WE Media: вставьте текст — получите презентацию",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#F4F6FB",
+  "theme_color": "#0044FF",
+  "lang": "ru",
+  "icons": [
+    { "src": "__PWA_ICON__", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "__PWA_ICON_MASKABLE__", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}

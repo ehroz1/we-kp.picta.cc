@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>КП · WE Media</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0044FF">
+<link rel="icon" href="__FAVICON__">
+<link rel="apple-touch-icon" href="__APPLE_TOUCH_ICON__">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="КП WE Media">
+<script>
+// сохранённая тема применяется до отрисовки CSS, чтобы не мелькала не та тема
+try {
+  var t = localStorage.getItem('wekp.theme.v1');
+  if (t === 'dark' || t === 'light') document.documentElement.dataset.theme = t;
+} catch (e) { /* приватный режим — тема пойдёт по системной настройке */ }
+</script>
+<style id="fontsCss">
+__FONT_FACES__
+</style>
+<style id="slidesCss">
+__SLIDES_CSS__
+</style>
+<style>
+__CSS__
+</style>
+</head>
+<body>
+
+<div class="install-banner" id="installBanner" hidden>
+  <span id="installBannerText"></span>
+  <button type="button" class="btn btn-primary btn-sm" id="installBannerAction">Установить</button>
+  <button type="button" class="icon-btn" id="installBannerClose" aria-label="Закрыть" data-icon="x"></button>
+</div>
+
+<!-- ================================================== стартовый экран -->
+<main class="screen start" id="start" aria-label="Новое КП">
+  <header class="start-head">
+    <div class="brand">
+      <span class="brand-logo" id="brandLogo" aria-label="WE Media Group"></span>
+      <span class="brand-sub">конструктор КП</span>
+    </div>
+    <div class="head-actions">
+      <button type="button" class="icon-btn" id="btnHelpStart" title="Как пользоваться" data-icon="question"></button>
+      <button type="button" class="icon-btn" id="btnThemeStart" title="Тёмная тема" data-icon="moon"></button>
+    </div>
+  </header>
+
+  <section class="hero">
+    <div class="hero-main">
+      <h1>Ваш текст — <span class="accent">готовое КП</span></h1>
+      <p class="hero-lead">Вставьте текст коммерческого предложения: разложим его по слайдам в стиле WE Media, подберём раскладки и уместим текст. Слова не меняем.</p>
+      <div class="paste-box" id="pasteBox">
+        <textarea id="startText" spellcheck="false" placeholder="Вставьте текст КП из Word, Google Docs или письма — ⌘V / Ctrl+V&#10;&#10;Executive Visibility by WE Media&#10;Программа продвижения первого лица в деловых медиа&#10;&#10;Что мы делаем&#10;— Формируем позиционирование&#10;— Готовим колонки и интервью&#10;…"></textarea>
+        <div class="paste-empty" id="pasteEmpty">
+          <button type="button" class="btn btn-primary btn-lg" id="btnPasteClipboard"><span data-icon="clipboard-text"></span>Вставить из буфера</button>
+          <span class="muted">или ⌘V / Ctrl+V в поле, или перетащите сюда файл Word</span>
+        </div>
+      </div>
+      <div class="hero-actions">
+        <button type="button" class="btn btn-primary btn-lg" id="btnBuild" disabled><span data-icon="magic-wand"></span>Собрать презентацию</button>
+        <button type="button" class="btn btn-ghost" id="btnOpenFile" title="Word (.docx), .txt или .md — можно просто перетащить в поле"><span data-icon="upload-simple"></span>Открыть файл</button>
+        <button type="button" class="btn btn-ghost" id="btnClearStart" hidden>Очистить</button>
+        <button type="button" class="btn btn-ghost" id="btnSyntax"><span data-icon="question"></span>Как размечать текст</button>
+      </div>
+    </div>
+    <aside class="hero-preview" id="heroPreview" aria-label="Предпросмотр">
+      <div class="hp-head">
+        <span class="eyebrow">Предпросмотр</span>
+        <span class="muted" id="heroCount"></span>
+      </div>
+      <div class="hp-grid" id="heroGrid"></div>
+      <div class="hp-empty" id="heroEmpty">
+        <div class="hp-demo mini" id="heroDemo"></div>
+        <p class="muted">Здесь появятся слайды, как только вы вставите текст.</p>
+      </div>
+    </aside>
+  </section>
+
+  <section class="drafts" id="draftsSection" hidden>
+    <div class="section-head">
+      <h2>Мои КП</h2>
+      <span class="muted">Хранятся в этом браузере</span>
+    </div>
+    <div class="drafts-row" id="draftsRow"></div>
+  </section>
+
+  <section class="structures">
+    <div class="section-head">
+      <h2>Или начните со структуры</h2>
+      <span class="muted">Готовые наборы слайдов с примером текста — замените своим</span>
+    </div>
+    <div class="tpl-grid" id="tplGrid"></div>
+  </section>
+</main>
+
+<!-- ======================================== окно предпросмотра структуры -->
+<div class="modal" id="tplModal" hidden>
+  <div class="modal-card tpl-card" role="dialog" aria-modal="true" aria-labelledby="tplTitle">
+    <button type="button" class="icon-btn modal-close" id="tplClose" aria-label="Закрыть" data-icon="x"></button>
+    <div class="tpl-preview">
+      <div class="tpl-stage mini" id="tplStage"></div>
+      <div class="tpl-strip" id="tplStrip"></div>
+    </div>
+    <div class="tpl-info">
+      <h2 id="tplTitle"></h2>
+      <p class="tpl-desc" id="tplDesc"></p>
+      <p class="label">Слайды</p>
+      <ol class="tpl-kinds" id="tplKinds"></ol>
+      <div class="tpl-actions">
+        <button type="button" class="btn btn-primary" id="tplUse">Начать с примером</button>
+        <button type="button" class="btn btn-outline" id="tplEmpty">Пустая структура</button>
+      </div>
+      <p class="muted small">← → — листать слайды, Enter — начать</p>
+    </div>
+  </div>
+</div>
+
+<!-- =========================================================== редактор -->
+<main class="screen editor" id="editor" hidden aria-label="Редактор">
+  <header class="topbar">
+    <button type="button" class="btn btn-ghost" id="btnBack" title="Мои КП"><span data-icon="arrow-left"></span><span class="hide-sm">Мои КП</span></button>
+    <div class="doc-title">
+      <input type="text" id="docName" aria-label="Название КП" spellcheck="false">
+    </div>
+    <div class="top-actions">
+      <button type="button" class="icon-btn" id="btnUndo" title="Отменить (⌘Z)" data-icon="arrow-counter-clockwise"></button>
+      <button type="button" class="icon-btn" id="btnRedo" title="Повторить (⌘⇧Z)" data-icon="arrow-clockwise"></button>
+      <span class="sep hide-sm"></span>
+      <button type="button" class="btn btn-ghost hide-sm" id="btnImport" title="Вставить текст и разложить по слайдам"><span data-icon="clipboard-text"></span>Текст</button>
+      <button type="button" class="chip-btn check-chip" id="btnCheck" hidden></button>
+      <button type="button" class="icon-btn" id="btnPresent" title="Показ (F5)" data-icon="play"></button>
+      <button type="button" class="icon-btn hide-sm" id="btnHelp" title="Как пользоваться" data-icon="question"></button>
+      <button type="button" class="icon-btn hide-sm" id="btnTheme" title="Тёмная тема" data-icon="moon"></button>
+      <div class="split-btn">
+        <button type="button" class="btn btn-primary" id="btnPdf"><span data-icon="file-pdf"></span><span class="hide-sm">Скачать PDF</span></button>
+        <button type="button" class="btn btn-primary caret" id="btnExportMore" aria-label="Другие форматы" data-icon="caret-down"></button>
+      </div>
+    </div>
+    <div class="pop export-pop" id="exportPop" hidden>
+      <button type="button" class="menu-item" data-export="pdf"><span data-icon="file-pdf"></span><span><b>PDF</b><small>все слайды, текст остаётся текстом</small></span></button>
+      <button type="button" class="menu-item" data-export="zip"><span data-icon="file-zip"></span><span><b>PNG · ZIP</b><small>все слайды картинками</small></span></button>
+      <button type="button" class="menu-item" data-export="png"><span data-icon="image"></span><span><b>PNG</b><small>только текущий слайд</small></span></button>
+      <button type="button" class="menu-item" data-export="html"><span data-icon="file-html"></span><span><b>HTML</b><small>файл для показа в браузере</small></span></button>
+      <div class="progress" id="exportProgress" hidden><div id="exportProgressBar"></div></div>
+    </div>
+  </header>
+
+  <div class="workspace">
+    <aside class="slides-panel" aria-label="Слайды">
+      <div class="slides-list" id="slidesList"></div>
+      <div class="add-slide">
+        <button type="button" class="btn btn-outline btn-block" id="btnAddSlide"><span data-icon="plus"></span>Слайд</button>
+      </div>
+    </aside>
+
+    <section class="stage-panel" aria-label="Превью слайда">
+      <div class="stage" id="stage">
+        <div class="stage-frame" id="stageFrame"><div class="stage-slide" id="stageSlide"></div></div>
+      </div>
+      <div class="stage-bar">
+        <div class="notes" id="notes"></div>
+        <div class="stage-nav">
+          <button type="button" class="icon-btn sm" id="btnSmaller" title="Мельче текст на этом слайде" data-icon="text-aa"></button>
+          <span class="size-val" id="sizeVal" title="Максимальный размер текста на слайде"></span>
+          <span class="sep"></span>
+          <button type="button" class="icon-btn" id="btnPrev" title="Предыдущий слайд" data-icon="arrow-up"></button>
+          <span id="slideCounter"></span>
+          <button type="button" class="icon-btn" id="btnNext" title="Следующий слайд" data-icon="arrow-down"></button>
+        </div>
+      </div>
+    </section>
+
+    <aside class="form-panel" aria-label="Содержимое слайда">
+      <section class="deck-box" id="deckBox"></section>
+      <section class="layouts-box">
+        <div class="box-head">
+          <span class="eyebrow">Раскладка</span>
+          <span class="muted small" id="layoutName"></span>
+        </div>
+        <div class="layouts" id="layouts"></div>
+        <p class="hidden-note" id="hiddenNote" hidden></p>
+      </section>
+      <div class="form" id="form"></div>
+    </aside>
+  </div>
+</main>
+
+<!-- ================================================ меню «+ слайд» -->
+<div class="pop add-pop" id="addPop" hidden></div>
+
+<!-- =================================================== вставка текста -->
+<div class="modal" id="importModal" hidden>
+  <div class="modal-card import-card" role="dialog" aria-modal="true" aria-labelledby="importTitle">
+    <button type="button" class="icon-btn modal-close" id="importClose" aria-label="Закрыть" data-icon="x"></button>
+    <div class="import-cols">
+      <div class="import-main">
+        <h2 id="importTitle">Текст → слайды</h2>
+        <p class="muted">Вставьте текст КП целиком или кусок (или перетащите файл Word). Форматирование из Word и Google Docs превратится в разметку: <code>#</code> — новый слайд, <code>-</code> — пункт.</p>
+        <textarea id="importText" spellcheck="false" placeholder="Вставьте текст — ⌘V / Ctrl+V"></textarea>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" id="importCancel">Отмена</button>
+          <button type="button" class="btn btn-outline" id="importAppend" disabled>Добавить в конец</button>
+          <button type="button" class="btn btn-primary" id="importReplace" disabled>Заменить все слайды</button>
+        </div>
+      </div>
+      <div class="import-side">
+        <div class="hp-head"><span class="eyebrow">Получится</span><span class="muted" id="importCount"></span></div>
+        <div class="hp-grid" id="importGrid"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================================================== сверка текста -->
+<div class="modal" id="checkModal" hidden>
+  <div class="modal-card check-card" role="dialog" aria-modal="true" aria-labelledby="checkTitle">
+    <button type="button" class="icon-btn modal-close" id="checkClose" aria-label="Закрыть" data-icon="x"></button>
+    <h2 id="checkTitle">Сверка с исходным текстом</h2>
+    <p class="muted" id="checkSummary"></p>
+    <div class="check-list" id="checkList"></div>
+  </div>
+</div>
+
+<!-- =================================================== разметка текста -->
+<div class="modal" id="syntaxModal" hidden>
+  <div class="modal-card help-card" role="dialog" aria-modal="true" aria-labelledby="syntaxTitle">
+    <button type="button" class="icon-btn modal-close" id="syntaxClose" aria-label="Закрыть" data-icon="x"></button>
+    <h2 id="syntaxTitle">Как размечать текст</h2>
+    <div id="syntaxBody"></div>
+  </div>
+</div>
+
+<!-- ============================================================ справка -->
+<div class="modal" id="helpModal" hidden>
+  <div class="modal-card help-card" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+    <button type="button" class="icon-btn modal-close" id="helpClose" aria-label="Закрыть" data-icon="x"></button>
+    <h2 id="helpTitle">Как пользоваться</h2>
+    <div id="helpBody"></div>
+  </div>
+</div>
+
+<!-- =============================================================== показ -->
+<div class="present" id="present" hidden>
+  <div class="present-slide" id="presentSlide"></div>
+  <div class="present-bar" id="presentBar">
+    <span id="presentCounter"></span>
+    <button type="button" class="icon-btn" id="presentClose" aria-label="Закрыть показ" data-icon="x"></button>
+  </div>
+</div>
+
+<p class="status" id="status" role="status" aria-live="polite"></p>
+<input type="file" id="logoInput" accept="image/png,image/svg+xml,image/webp,image/jpeg" hidden>
+<input type="file" id="textFileInput" accept=".docx,.txt,.md,.markdown,.html,.htm,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
+
+<!-- слайды для печати в PDF (заполняются перед печатью) -->
+<div id="printRoot" aria-hidden="true"></div>
+
+<script>
+__ASSETS_JS__
+</script>
+<script>
+__LAYOUTS_JS__
+</script>
+<script>
+__IMPORTER_JS__
+</script>
+<script>
+__APP_JS__
+</script>
+</body>
+</html>
